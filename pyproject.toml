@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tensorgrad"
+version = "0.1.0"
+description = "A from-scratch deep-learning framework: reverse-mode autodiff over NumPy tensors, a PyTorch-like nn/optim API, and a character-level GPT."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Houssam Mehdi" }]
+keywords = ["autograd", "automatic-differentiation", "deep-learning", "numpy", "transformer", "gpt"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Education",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Typing :: Typed",
+]
+dependencies = ["numpy>=1.26"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "hypothesis>=6.100", "ruff>=0.6", "mypy>=1.10"]
+examples = ["matplotlib>=3.8"]
+
+[project.urls]
+Repository = "https://github.com/houssammehdi/tensorgrad"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tensorgrad"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/tensorgrad", "tests", "examples", "README.md", "LICENSE"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = ["slow: long-running training runs (enable with --run-slow)"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+files = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "examples"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4", "RUF", "NPY", "PT", "PIE", "RET"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["tensorgrad"]
