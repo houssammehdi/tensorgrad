@@ -51,7 +51,7 @@ def get_default_dtype() -> FloatDType:
 def _to_array(data: object, dtype: DTypeLike | None) -> Array:
     if isinstance(data, Tensor):
         data = data.data
-    if isinstance(data, np.ndarray):
+    if isinstance(data, np.ndarray | np.generic):
         return np.array(data, dtype=dtype, copy=True)
     arr = np.asarray(data, dtype=dtype)
     if dtype is None and arr.dtype == np.float64:
