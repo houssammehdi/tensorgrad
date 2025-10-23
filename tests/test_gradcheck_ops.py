@@ -212,8 +212,8 @@ def test_getitem(rng: np.random.Generator, index: tuple[object, ...]) -> None:
     idx = index[0] if len(index) == 1 else index
     np.testing.assert_allclose(
         x[idx].data, x.data[idx if not isinstance(idx, list) else np.array(idx)]
-    )  # type: ignore[index]
-    assert gradcheck(lambda t: t[idx], [x])  # type: ignore[index]
+    )
+    assert gradcheck(lambda t: t[idx], [x])
 
 
 def test_getitem_repeated_index_accumulates() -> None:

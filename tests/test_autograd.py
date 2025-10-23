@@ -37,7 +37,7 @@ class TestConstruction:
         finally:
             tg.set_default_dtype(np.float32)
         with pytest.raises(TypeError):
-            tg.set_default_dtype(np.int32)  # type: ignore[arg-type]
+            tg.set_default_dtype(np.int32)
 
     def test_only_floats_can_require_grad(self) -> None:
         with pytest.raises(TypeError):
