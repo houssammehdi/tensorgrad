@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from tensorgrad import ops
+from tensorgrad._random import get_rng
 from tensorgrad._types import Array
 from tensorgrad.autograd import no_grad
 from tensorgrad.nn import init
@@ -122,11 +123,12 @@ class GPT(Module):
         """Autoregressively extend ``idx`` (``(B, T)`` ids) by ``max_new_tokens`` samples.
 
         Runs in evaluation mode under :class:`~tensorgrad.no_grad`; the context is cropped to
-        the last ``block_size`` tokens. ``top_k`` restricts sampling to the k likeliest tokens.
+        the last ``block_size`` tokens. ``top_k`` restricts sampling to the k likeliest tokens;
+        ``rng`` defaults to the global generator (see :func:`tensorgrad.manual_seed`).
         """
         if temperature <= 0:
             raise ValueError("temperature must be positive")
-        rng = rng or np.random.default_rng()
+        rng = rng or get_rng()
         was_training = self.training
         self.eval()
         out = np.asarray(idx, dtype=np.int64)

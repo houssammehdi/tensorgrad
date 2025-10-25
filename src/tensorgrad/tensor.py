@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import operator
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Self, TypeAlias
+from typing import TYPE_CHECKING, Any, Self, SupportsIndex, TypeAlias, cast
 
 import numpy as np
 
@@ -370,9 +371,10 @@ class Tensor:
 
         Accepts ``t.reshape(2, 3)`` as well as ``t.reshape((2, 3))``.
         """
-        first = shape[0] if len(shape) == 1 else None
-        dims = tuple(first) if first is not None and not isinstance(first, int) else shape
-        return _shape.reshape(self, tuple(int(d) for d in dims if isinstance(d, int)))
+        dims: Sequence[object] = (
+            shape[0] if len(shape) == 1 and isinstance(shape[0], Sequence) else shape
+        )
+        return _shape.reshape(self, tuple(operator.index(cast(SupportsIndex, d)) for d in dims))
 
     def transpose(self, axis0: int, axis1: int) -> Tensor:
         """Swap two axes."""

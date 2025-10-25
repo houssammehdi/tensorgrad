@@ -161,7 +161,7 @@ def dropout(
     if p == 1.0:
         mask = np.zeros_like(tx.data)
     else:
-        keep = (rng or get_rng()).random(tx.shape) >= p
+        keep = (rng or get_rng()).random(tx.shape, dtype=np.float32) >= p
         mask = keep.astype(tx.dtype) / np.asarray(1.0 - p, dtype=tx.dtype)
 
     def backward(g: Array) -> tuple[Array]:

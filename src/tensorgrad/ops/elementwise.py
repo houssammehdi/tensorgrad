@@ -192,7 +192,8 @@ def gelu(a: TensorLike) -> Tensor:
     """
     ta = as_tensor(a)
     x = ta.data
-    inner = _GELU_C * (x + 0.044715 * x**3)
+    # x * x * x rather than x**3: NumPy's float32 power is an order of magnitude slower.
+    inner = _GELU_C * (x + 0.044715 * (x * x * x))
     t = np.tanh(inner)
     out = 0.5 * x * (1 + t)
 

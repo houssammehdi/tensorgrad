@@ -183,6 +183,13 @@ def test_embedding_lookup() -> None:
         tg.embedding(np.array([0.5]), w)
 
 
+def test_reductions_keep_float32_and_promote_integers() -> None:
+    x = tg.Tensor(np.ones((2, 3), dtype=np.float32))
+    assert x.mean().dtype == x.var().dtype == x.sum(axis=0).dtype == np.float32
+    ints = tg.Tensor(np.array([1, 2]))
+    assert ints.mean().item() == 1.5
+
+
 def test_var_matches_numpy(rng: np.random.Generator) -> None:
     x = rng.standard_normal((3, 5))
     np.testing.assert_allclose(tg.Tensor(x).var(axis=1).data, x.var(axis=1, ddof=1))
@@ -219,4 +226,5 @@ def test_shape_op_errors() -> None:
     with pytest.raises(IndexError, match="integer or boolean"):
         t[np.array([0.5])]
     assert t.reshape((3, 2)).shape == t.reshape(3, 2).shape == (3, 2)
+    assert t.reshape(np.int64(3), -1).shape == (3, 2)  # NumPy integers are accepted too
     assert t.squeeze(0).shape == (2, 3)  # not size 1: unchanged

@@ -43,7 +43,7 @@ def mean(a: TensorLike, axis: Axis = None, keepdims: bool = False) -> Tensor:
     def backward(g: Array) -> tuple[Array]:
         return (expand_reduced(g / n, ta.shape, axes, keepdims),)
 
-    return make_result(np.asarray(out, dtype=ta.dtype), (ta,), backward, "mean")
+    return make_result(np.asarray(out), (ta,), backward, "mean")
 
 
 def _extremum(
@@ -89,4 +89,4 @@ def var(a: TensorLike, axis: Axis = None, keepdims: bool = False, correction: in
     def backward(g: Array) -> tuple[Array]:
         return (expand_reduced(g, ta.shape, axes, keepdims) * (2 / denom) * centered,)
 
-    return make_result(np.asarray(out, dtype=ta.dtype), (ta,), backward, "var")
+    return make_result(np.asarray(out), (ta,), backward, "var")
