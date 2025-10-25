@@ -1,0 +1,352 @@
+HAMLET:
+To be, or not to be, that is the question:
+Whether 'tis nobler in the mind to suffer
+The slings and arrows of outrageous fortune,
+Or to take arms against a sea of troubles
+And by opposing end them. To die: to sleep;
+No more; and by a sleep to say we end
+The heart-ache and the thousand natural shocks
+That flesh is heir to, 'tis a consummation
+Devoutly to be wish'd. To die, to sleep;
+To sleep: perchance to dream: ay, there's the rub;
+For in that sleep of death what dreams may come
+When we have shuffled off this mortal coil,
+Must give us pause: there's the respect
+That makes calamity of so long life;
+For who would bear the whips and scorns of time,
+The oppressor's wrong, the proud man's contumely,
+The pangs of despised love, the law's delay,
+The insolence of office and the spurns
+That patient merit of the unworthy takes,
+When he himself might his quietus make
+With a bare bodkin? who would fardels bear,
+To grunt and sweat under a weary life,
+But that the dread of something after death,
+The undiscover'd country from whose bourn
+No traveller returns, puzzles the will
+And makes us rather bear those ills we have
+Than fly to others that we know not of?
+Thus conscience does make cowards of us all;
+And thus the native hue of resolution
+Is sicklied o'er with the pale cast of thought,
+And enterprises of great pith and moment
+With this regard their currents turn awry,
+And lose the name of action.
+
+JAQUES:
+All the world's a stage,
+And all the men and women merely players:
+They have their exits and their entrances;
+And one man in his time plays many parts,
+His acts being seven ages. At first the infant,
+Mewling and puking in the nurse's arms.
+And then the whining school-boy, with his satchel
+And shining morning face, creeping like snail
+Unwillingly to school. And then the lover,
+Sighing like furnace, with a woeful ballad
+Made to his mistress' eyebrow. Then a soldier,
+Full of strange oaths and bearded like the pard,
+Jealous in honour, sudden and quick in quarrel,
+Seeking the bubble reputation
+Even in the cannon's mouth. And then the justice,
+In fair round belly with good capon lined,
+With eyes severe and beard of formal cut,
+Full of wise saws and modern instances;
+And so he plays his part. The sixth age shifts
+Into the lean and slipper'd pantaloon,
+With spectacles on nose and pouch on side,
+His youthful hose, well saved, a world too wide
+For his shrunk shank; and his big manly voice,
+Turning again toward childish treble, pipes
+And whistles in his sound. Last scene of all,
+That ends this strange eventful history,
+Is second childishness and mere oblivion,
+Sans teeth, sans eyes, sans taste, sans everything.
+
+MACBETH:
+To-morrow, and to-morrow, and to-morrow,
+Creeps in this petty pace from day to day
+To the last syllable of recorded time,
+And all our yesterdays have lighted fools
+The way to dusty death. Out, out, brief candle!
+Life's but a walking shadow, a poor player
+That struts and frets his hour upon the stage
+And then is heard no more: it is a tale
+Told by an idiot, full of sound and fury,
+Signifying nothing.
+
+MACBETH:
+Is this a dagger which I see before me,
+The handle toward my hand? Come, let me clutch thee.
+I have thee not, and yet I see thee still.
+Art thou not, fatal vision, sensible
+To feeling as to sight? or art thou but
+A dagger of the mind, a false creation,
+Proceeding from the heat-oppressed brain?
+I see thee yet, in form as palpable
+As this which now I draw.
+Thou marshall'st me the way that I was going;
+And such an instrument I was to use.
+
+PORTIA:
+The quality of mercy is not strain'd,
+It droppeth as the gentle rain from heaven
+Upon the place beneath: it is twice blest;
+It blesseth him that gives and him that takes:
+'Tis mightiest in the mightiest: it becomes
+The throned monarch better than his crown;
+His sceptre shows the force of temporal power,
+The attribute to awe and majesty,
+Wherein doth sit the dread and fear of kings;
+But mercy is above this sceptred sway;
+It is enthroned in the hearts of kings,
+It is an attribute to God himself;
+And earthly power doth then show likest God's
+When mercy seasons justice.
+
+ANTONY:
+Friends, Romans, countrymen, lend me your ears;
+I come to bury Caesar, not to praise him.
+The evil that men do lives after them;
+The good is oft interred with their bones;
+So let it be with Caesar. The noble Brutus
+Hath told you Caesar was ambitious:
+If it were so, it was a grievous fault,
+And grievously hath Caesar answer'd it.
+Here, under leave of Brutus and the rest,
+For Brutus is an honourable man;
+So are they all, all honourable men,
+Come I to speak in Caesar's funeral.
+He was my friend, faithful and just to me:
+But Brutus says he was ambitious;
+And Brutus is an honourable man.
+He hath brought many captives home to Rome
+Whose ransoms did the general coffers fill:
+Did this in Caesar seem ambitious?
+When that the poor have cried, Caesar hath wept:
+Ambition should be made of sterner stuff:
+Yet Brutus says he was ambitious;
+And Brutus is an honourable man.
+
+GLOUCESTER:
+Now is the winter of our discontent
+Made glorious summer by this sun of York;
+And all the clouds that lour'd upon our house
+In the deep bosom of the ocean buried.
+Now are our brows bound with victorious wreaths;
+Our bruised arms hung up for monuments;
+Our stern alarums changed to merry meetings,
+Our dreadful marches to delightful measures.
+Grim-visaged war hath smooth'd his wrinkled front;
+And now, instead of mounting barded steeds
+To fright the souls of fearful adversaries,
+He capers nimbly in a lady's chamber
+To the lascivious pleasing of a lute.
+
+KING HENRY V:
+Once more unto the breach, dear friends, once more;
+Or close the wall up with our English dead.
+In peace there's nothing so becomes a man
+As modest stillness and humility:
+But when the blast of war blows in our ears,
+Then imitate the action of the tiger;
+Stiffen the sinews, summon up the blood,
+Disguise fair nature with hard-favour'd rage;
+Then lend the eye a terrible aspect.
+I see you stand like greyhounds in the slips,
+Straining upon the start. The game's afoot:
+Follow your spirit, and upon this charge
+Cry 'God for Harry, England, and Saint George!'
+
+KING HENRY V:
+This day is called the feast of Crispian:
+He that outlives this day, and comes safe home,
+Will stand a tip-toe when the day is named,
+And rouse him at the name of Crispian.
+He that shall live this day, and see old age,
+Will yearly on the vigil feast his neighbours,
+And say 'To-morrow is Saint Crispian:'
+Then will he strip his sleeve and show his scars.
+Old men forget: yet all shall be forgot,
+But he'll remember with advantages
+What feats he did that day. This story shall the good man teach his son;
+And Crispin Crispian shall ne'er go by,
+From this day to the ending of the world,
+But we in it shall be remember'd;
+We few, we happy few, we band of brothers;
+For he to-day that sheds his blood with me
+Shall be my brother.
+
+ROMEO:
+But, soft! what light through yonder window breaks?
+It is the east, and Juliet is the sun.
+Arise, fair sun, and kill the envious moon,
+Who is already sick and pale with grief,
+That thou her maid art far more fair than she.
+It is my lady, O, it is my love!
+O, that she knew she were!
+She speaks yet she says nothing: what of that?
+Her eye discourses; I will answer it.
+See, how she leans her cheek upon her hand!
+O, that I were a glove upon that hand,
+That I might touch that cheek!
+
+JULIET:
+O Romeo, Romeo! wherefore art thou Romeo?
+Deny thy father and refuse thy name;
+Or, if thou wilt not, be but sworn my love,
+And I'll no longer be a Capulet.
+'Tis but thy name that is my enemy;
+Thou art thyself, though not a Montague.
+What's in a name? that which we call a rose
+By any other name would smell as sweet.
+
+PROSPERO:
+Our revels now are ended. These our actors,
+As I foretold you, were all spirits and
+Are melted into air, into thin air:
+And, like the baseless fabric of this vision,
+The cloud-capp'd towers, the gorgeous palaces,
+The solemn temples, the great globe itself,
+Yea, all which it inherit, shall dissolve
+And, like this insubstantial pageant faded,
+Leave not a rack behind. We are such stuff
+As dreams are made on, and our little life
+Is rounded with a sleep.
+
+JOHN OF GAUNT:
+This royal throne of kings, this scepter'd isle,
+This earth of majesty, this seat of Mars,
+This other Eden, demi-paradise,
+This fortress built by Nature for herself
+Against infection and the hand of war,
+This happy breed of men, this little world,
+This precious stone set in the silver sea,
+Which serves it in the office of a wall,
+Or as a moat defensive to a house,
+Against the envy of less happier lands,
+This blessed plot, this earth, this realm, this England.
+
+POLONIUS:
+Give thy thoughts no tongue,
+Nor any unproportioned thought his act.
+Be thou familiar, but by no means vulgar.
+Those friends thou hast, and their adoption tried,
+Grapple them to thy soul with hoops of steel;
+But do not dull thy palm with entertainment
+Of each new-hatch'd, unfledged comrade. Beware
+Of entrance to a quarrel, but being in,
+Bear't that the opposed may beware of thee.
+Give every man thy ear, but few thy voice;
+Take each man's censure, but reserve thy judgment.
+Neither a borrower nor a lender be;
+For loan oft loses both itself and friend,
+And borrowing dulls the edge of husbandry.
+This above all: to thine own self be true,
+And it must follow, as the night the day,
+Thou canst not then be false to any man.
+
+DUKE ORSINO:
+If music be the food of love, play on;
+Give me excess of it, that, surfeiting,
+The appetite may sicken, and so die.
+That strain again! it had a dying fall:
+O, it came o'er my ear like the sweet sound,
+That breathes upon a bank of violets,
+Stealing and giving odour!
+
+SONNET XVIII:
+Shall I compare thee to a summer's day?
+Thou art more lovely and more temperate:
+Rough winds do shake the darling buds of May,
+And summer's lease hath all too short a date:
+Sometime too hot the eye of heaven shines,
+And often is his gold complexion dimm'd;
+And every fair from fair sometime declines,
+By chance or nature's changing course untrimm'd;
+But thy eternal summer shall not fade
+Nor lose possession of that fair thou owest;
+Nor shall Death brag thou wander'st in his shade,
+When in eternal lines to time thou growest:
+So long as men can breathe or eyes can see,
+So long lives this and this gives life to thee.
+
+SONNET XXIX:
+When, in disgrace with fortune and men's eyes,
+I all alone beweep my outcast state
+And trouble deaf heaven with my bootless cries
+And look upon myself and curse my fate,
+Wishing me like to one more rich in hope,
+Featured like him, like him with friends possess'd,
+Desiring this man's art and that man's scope,
+With what I most enjoy contented least;
+Yet in these thoughts myself almost despising,
+Haply I think on thee, and then my state,
+Like to the lark at break of day arising
+From sullen earth, sings hymns at heaven's gate;
+For thy sweet love remember'd such wealth brings
+That then I scorn to change my state with kings.
+
+SONNET XXX:
+When to the sessions of sweet silent thought
+I summon up remembrance of things past,
+I sigh the lack of many a thing I sought,
+And with old woes new wail my dear time's waste:
+Then can I drown an eye, unused to flow,
+For precious friends hid in death's dateless night,
+And weep afresh love's long since cancell'd woe,
+And moan the expense of many a vanish'd sight:
+Then can I grieve at grievances foregone,
+And heavily from woe to woe tell o'er
+The sad account of fore-bemoaned moan,
+Which I new pay as if not paid before.
+But if the while I think on thee, dear friend,
+All losses are restored and sorrows end.
+
+SONNET LXXIII:
+That time of year thou mayst in me behold
+When yellow leaves, or none, or few, do hang
+Upon those boughs which shake against the cold,
+Bare ruin'd choirs, where late the sweet birds sang.
+In me thou seest the twilight of such day
+As after sunset fadeth in the west,
+Which by and by black night doth take away,
+Death's second self, that seals up all in rest.
+In me thou see'st the glowing of such fire
+That on the ashes of his youth doth lie,
+As the death-bed whereon it must expire
+Consumed with that which it was nourish'd by.
+This thou perceivest, which makes thy love more strong,
+To love that well which thou must leave ere long.
+
+SONNET CXVI:
+Let me not to the marriage of true minds
+Admit impediments. Love is not love
+Which alters when it alteration finds,
+Or bends with the remover to remove:
+O no! it is an ever-fixed mark
+That looks on tempests and is never shaken;
+It is the star to every wandering bark,
+Whose worth's unknown, although his height be taken.
+Love's not Time's fool, though rosy lips and cheeks
+Within his bending sickle's compass come:
+Love alters not with his brief hours and weeks,
+But bears it out even to the edge of doom.
+If this be error and upon me proved,
+I never writ, nor no man ever loved.
+
+SONNET CXXX:
+My mistress' eyes are nothing like the sun;
+Coral is far more red than her lips' red;
+If snow be white, why then her breasts are dun;
+If hairs be wires, black wires grow on her head.
+I have seen roses damask'd, red and white,
+But no such roses see I in her cheeks;
+And in some perfumes is there more delight
+Than in the breath that from my mistress reeks.
+I love to hear her speak, yet well I know
+That music hath a far more pleasing sound;
+I grant I never saw a goddess go;
+My mistress, when she walks, treads on the ground:
+And yet, by heaven, I think my love as rare
+As any she belied with false compare.
