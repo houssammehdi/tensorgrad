@@ -270,7 +270,8 @@ OPENBLAS_NUM_THREADS=1 python examples/char_gpt.py --steps 1200 --seed 0
 ```
 
 The corpus, `examples/data/shakespeare.txt`, is 13,392 characters of well-known
-public-domain speeches and sonnets, split 90/10 into train and validation text. The model has
+public-domain speeches and sonnets (transcribed for this repo, so wording may differ
+slightly from standard editions), split 90/10 into train and validation text. The model has
 3 pre-LN blocks, 4 heads, width 96, a 64-character context and tied input/output embeddings
 (347,712 parameters). It trains with AdamW (weight decay on matrices only, via parameter
 groups), a cosine schedule with warm-up and gradient clipping, at 192 ms per step of 32×64
