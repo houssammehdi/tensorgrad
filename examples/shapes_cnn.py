@@ -81,7 +81,11 @@ def save_grid(images: np.ndarray, labels: np.ndarray, preds: np.ndarray, path: P
     for i, ax in zip(order, axes.ravel(), strict=True):
         ax.imshow(images[i, 0], cmap="gray_r", vmin=0, vmax=1)
         ok = preds[i] == labels[i]
-        text = SHAPE_CLASSES[preds[i]] if ok else f"{SHAPE_CLASSES[preds[i]]} (wrong)"
+        text = (
+            SHAPE_CLASSES[preds[i]]
+            if ok
+            else f"{SHAPE_CLASSES[preds[i]]} (true: {SHAPE_CLASSES[labels[i]]})"
+        )
         ax.set_title(text, fontsize=7, color="#52514e" if ok else "#e34948")
         ax.set_xticks([])
         ax.set_yticks([])
