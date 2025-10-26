@@ -364,7 +364,9 @@ class Tensor:
 
     def argmax(self, axis: int | None = None, keepdims: bool = False) -> Tensor:
         """Indices of the maxima (not differentiable)."""
-        return Tensor._wrap(np.argmax(self.data, axis=axis, keepdims=keepdims))
+        if keepdims:
+            return Tensor._wrap(np.argmax(self.data, axis=axis, keepdims=True))
+        return Tensor._wrap(np.asarray(np.argmax(self.data, axis=axis)))
 
     def reshape(self, *shape: int | Sequence[int]) -> Tensor:
         """Return a tensor with the same data and a new shape (one entry may be ``-1``).

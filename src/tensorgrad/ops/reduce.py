@@ -14,11 +14,16 @@ from tensorgrad.tensor import Tensor, TensorLike
 __all__ = ["max", "mean", "min", "sum", "var"]
 
 
+def _drop_axes(kept: Array, axes: tuple[int, ...], keepdims: bool) -> Array:
+    """Squeeze reduced axes unless ``keepdims`` (reductions always run with keepdims=True)."""
+    return kept if keepdims else np.squeeze(kept, axis=axes)
+
+
 def sum(a: TensorLike, axis: Axis = None, keepdims: bool = False) -> Tensor:
     """Sum over ``axis`` (all axes when ``None``)."""
     ta = as_tensor(a)
     axes = normalize_axes(axis, ta.ndim)
-    out = np.sum(ta.data, axis=axes, keepdims=keepdims)
+    out = _drop_axes(np.sum(ta.data, axis=axes, keepdims=True), axes, keepdims)
 
     def backward(g: Array) -> tuple[Array]:
         return (expand_reduced(g, ta.shape, axes, keepdims),)
@@ -38,7 +43,7 @@ def mean(a: TensorLike, axis: Axis = None, keepdims: bool = False) -> Tensor:
     ta = as_tensor(a)
     axes = normalize_axes(axis, ta.ndim)
     n = _count(ta.shape, axes)
-    out = np.mean(ta.data, axis=axes, keepdims=keepdims)
+    out = _drop_axes(np.mean(ta.data, axis=axes, keepdims=True), axes, keepdims)
 
     def backward(g: Array) -> tuple[Array]:
         return (expand_reduced(g / n, ta.shape, axes, keepdims),)
@@ -52,7 +57,7 @@ def _extremum(
     ta = as_tensor(a)
     axes = normalize_axes(axis, ta.ndim)
     kept = reducer(ta.data, axis=axes, keepdims=True)
-    out = kept if keepdims else np.squeeze(kept, axis=axes)
+    out = _drop_axes(kept, axes, keepdims)
 
     def backward(g: Array) -> tuple[Array]:
         # Split the gradient evenly between tied extrema (a valid subgradient).
@@ -84,7 +89,8 @@ def var(a: TensorLike, axis: Axis = None, keepdims: bool = False, correction: in
     denom = builtins.max(_count(ta.shape, axes) - correction, 0)
     centered = ta.data - np.mean(ta.data, axis=axes, keepdims=True)
     with np.errstate(divide="ignore", invalid="ignore"):
-        out = np.sum(centered * centered, axis=axes, keepdims=keepdims) / denom
+        kept = np.sum(centered * centered, axis=axes, keepdims=True) / denom
+    out = _drop_axes(kept, axes, keepdims)
 
     def backward(g: Array) -> tuple[Array]:
         return (expand_reduced(g, ta.shape, axes, keepdims) * (2 / denom) * centered,)

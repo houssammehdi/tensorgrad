@@ -45,7 +45,6 @@ addopts = "-ra --strict-markers"
 markers = ["slow: long-running training runs (enable with --run-slow)"]
 
 [tool.mypy]
-python_version = "3.11"
 strict = true
 warn_unreachable = true
 files = ["src"]
