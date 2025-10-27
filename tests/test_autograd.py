@@ -68,6 +68,15 @@ class TestConstruction:
         with pytest.raises(TypeError):
             len(tg.Tensor(1.0))
 
+    def test_zero_dim_results_are_arrays(self) -> None:
+        # Regression: ufuncs on 0-d arrays return NumPy scalars, which leaked into ``data``,
+        # so ``numpy()`` was not an ndarray and in-place writes raised TypeError.
+        a = tg.Tensor(np.array(2.0), requires_grad=True)
+        for result in (a * 3, a + a, tg.exp(a), a.sum(), -a):
+            assert type(result.data) is np.ndarray and result.shape == ()
+            assert isinstance(result.numpy(), np.ndarray)
+            result.data[...] = 1.0  # writable, like any other tensor's data
+
     def test_numpy_defers_to_tensor_operators(self) -> None:
         t = tg.Tensor(np.ones(3), requires_grad=True)
         out = np.full(3, 2.0) * t  # ndarray on the left

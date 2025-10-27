@@ -106,9 +106,13 @@ class Tensor:
 
     @classmethod
     def _wrap(cls, data: Array) -> Tensor:
-        """Wrap an existing array without copying or converting it (internal fast path)."""
+        """Wrap an existing array without copying it (internal fast path).
+
+        NumPy returns scalars (``np.float64``), not 0-d arrays, from most operations on 0-d
+        inputs; those are converted so ``data`` is always a real, writable ``ndarray``.
+        """
         out = Tensor.__new__(Tensor)
-        out.data = data
+        out.data = data if isinstance(data, np.ndarray) else np.asarray(data)
         out.grad = None
         out._node = None
         out._retains_grad = False
