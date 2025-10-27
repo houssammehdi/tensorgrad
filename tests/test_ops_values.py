@@ -196,6 +196,17 @@ def test_var_matches_numpy(rng: np.random.Generator) -> None:
     np.testing.assert_allclose(tg.Tensor(x).var(correction=0).data, x.var())
 
 
+@pytest.mark.parametrize("shape", [(1,), (1, 3)])
+def test_unbiased_var_of_a_single_sample_is_nan_not_an_error(shape: tuple[int, ...]) -> None:
+    # Regression: backward divided a Python int by zero (ZeroDivisionError). PyTorch returns
+    # NaN for both the value and the gradient when N <= correction.
+    x = tg.Tensor(np.ones(shape), requires_grad=True)
+    v = x.var(axis=0)
+    assert np.all(np.isnan(v.data))
+    v.sum().backward()
+    assert x.grad is not None and np.all(np.isnan(x.grad))
+
+
 @pytest.mark.parametrize(
     ("grad_shape", "target", "expected"),
     [

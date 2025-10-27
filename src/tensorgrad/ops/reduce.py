@@ -91,8 +91,11 @@ def var(a: TensorLike, axis: Axis = None, keepdims: bool = False, correction: in
     with np.errstate(divide="ignore", invalid="ignore"):
         kept = np.sum(centered * centered, axis=axes, keepdims=True) / denom
     out = _drop_axes(kept, axes, keepdims)
+    # With N <= correction the estimator is undefined; like PyTorch, the value and the
+    # gradient are NaN (rather than a ZeroDivisionError during backward).
+    scale = 2 / denom if denom else float("nan")
 
     def backward(g: Array) -> tuple[Array]:
-        return (expand_reduced(g, ta.shape, axes, keepdims) * (2 / denom) * centered,)
+        return (expand_reduced(g, ta.shape, axes, keepdims) * scale * centered,)
 
     return make_result(np.asarray(out), (ta,), backward, "var")
