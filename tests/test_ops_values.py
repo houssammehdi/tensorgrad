@@ -181,6 +181,15 @@ def test_embedding_lookup() -> None:
     np.testing.assert_array_equal(out.data[0, 0], [9.0, 10.0, 11.0])
     with pytest.raises(TypeError, match="integers"):
         tg.embedding(np.array([0.5]), w)
+    assert tg.embedding(np.zeros((2, 0), dtype=np.int64), w).shape == (2, 0, 3)
+
+
+@pytest.mark.parametrize("bad_id", [-1, 4])
+def test_embedding_rejects_out_of_range_ids(bad_id: int) -> None:
+    # Regression: id -1 silently returned the last row (NumPy's negative indexing).
+    w = tg.Tensor(np.arange(12.0).reshape(4, 3))
+    with pytest.raises(IndexError, match="embedding ids"):
+        tg.embedding(np.array([0, bad_id]), w)
 
 
 def test_reductions_keep_float32_and_promote_integers() -> None:

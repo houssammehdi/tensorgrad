@@ -137,6 +137,11 @@ def embedding(indices: Tensor | Array, weight: TensorLike) -> Tensor:
     idx = np.asarray(indices.data if isinstance(indices, Tensor) else indices)
     if not np.issubdtype(idx.dtype, np.integer):
         raise TypeError(f"embedding indices must be integers, got {idx.dtype}")
+    # NumPy would silently wrap negative ids around to the last rows.
+    if idx.size and (idx.min() < 0 or idx.max() >= tw.shape[0]):
+        raise IndexError(
+            f"embedding ids must be in [0, {tw.shape[0]}), got {idx.min()}..{idx.max()}"
+        )
     out = tw.data[idx]
 
     def backward(g: Array) -> tuple[Array]:
