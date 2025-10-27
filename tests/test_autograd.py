@@ -195,6 +195,17 @@ class TestBackward:
         (w * np.ones(3, dtype=np.float64)).sum().backward()  # result promotes to float64
         assert w.grad is not None and w.grad.dtype == np.float32
 
+    def test_integer_cast_cuts_the_graph(self) -> None:
+        # Regression: astype(int) returned an integer tensor that still required grad, and
+        # backward() then produced a gradient of 2 for a piecewise-constant function.
+        x = tg.Tensor(np.array([1.5, 2.5]), requires_grad=True)
+        ids = x.astype(np.int64)
+        assert ids.dtype == np.int64 and not ids.requires_grad and ids.is_leaf
+        with pytest.raises(RuntimeError, match="does not require grad"):
+            (ids * 2).sum().backward()
+        assert not x.astype(np.bool_).requires_grad
+        assert x.astype(np.float32).requires_grad  # float casts stay differentiable
+
 
 class TestGradMode:
     def test_no_grad_context(self) -> None:

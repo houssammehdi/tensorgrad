@@ -205,11 +205,19 @@ def gelu(a: TensorLike) -> Tensor:
 
 
 def astype(a: TensorLike, dtype: DTypeLike) -> Tensor:
-    """Differentiable dtype conversion; the gradient is cast back to the input dtype."""
+    """Dtype conversion; the gradient is cast back to the input dtype.
+
+    Only floating-point results stay in the graph. Casting to an integer or boolean dtype
+    is piecewise constant (its derivative is zero almost everywhere), so, as in PyTorch, the
+    result is a constant that does not require grad.
+    """
     ta = as_tensor(a)
     source = ta.dtype
+    out = ta.data.astype(dtype)
+    if not np.issubdtype(out.dtype, np.floating):
+        return Tensor._wrap(out)
 
     def backward(g: Array) -> tuple[Array]:
         return (g.astype(source),)
 
-    return make_result(ta.data.astype(dtype), (ta,), backward, "astype")
+    return make_result(out, (ta,), backward, "astype")
