@@ -68,6 +68,22 @@ def test_conv_and_pool_validate_shapes() -> None:
         tg.max_pool2d(tg.zeros((2, 2)), 2)
 
 
+def test_conv2d_rejects_a_misshaped_bias() -> None:
+    # Regression: a (1,) bias broadcast silently in the forward pass and only failed inside
+    # backward() with an internal gradient-shape error.
+    x = tg.Tensor(np.ones((1, 1, 3, 3)), requires_grad=True)
+    w = tg.Tensor(np.ones((2, 1, 2, 2)), requires_grad=True)
+    with pytest.raises(ValueError, match="bias must have shape"):
+        tg.conv2d(x, w, tg.Tensor(np.ones(1)))
+
+
+def test_max_pool2d_rejects_padding_above_half_the_kernel() -> None:
+    # Regression: padding 2 with a 2x2 kernel produced windows made only of padding, whose
+    # output was -inf (PyTorch rejects this configuration).
+    with pytest.raises(ValueError, match="at most half"):
+        tg.max_pool2d(tg.zeros((1, 1, 4, 4)), 2, stride=1, padding=2)
+
+
 def test_softmax_is_stable_for_huge_logits() -> None:
     logits = tg.Tensor(np.array([[1000.0, 1000.0, -1000.0], [-1e4, 0.0, 1e4]]))
     with warnings.catch_warnings():

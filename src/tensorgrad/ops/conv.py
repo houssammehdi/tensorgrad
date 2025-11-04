@@ -88,6 +88,8 @@ def conv2d(
     c_out, c_in, kh, kw = tw.shape
     if c != c_in:
         raise ValueError(f"input has {c} channels but weight expects {c_in}")
+    if tb is not None and tb.shape != (c_out,):
+        raise ValueError(f"bias must have shape ({c_out},), got {tb.shape}")
     (sh, sw), (ph, pw) = _pair(stride, "stride"), _pair(padding, "padding")
     oh, ow = _out_size(h, kh, sh, ph), _out_size(w, kw, sw, pw)
 
@@ -125,8 +127,9 @@ def max_pool2d(
 ) -> Tensor:
     """Max pooling over ``(N, C, H, W)`` input; ``stride`` defaults to ``kernel_size``.
 
-    Padding uses ``-inf`` so padded cells never win. The gradient goes to the first maximum
-    of each window (the same tie-breaking rule as PyTorch).
+    Padding uses ``-inf`` so padded cells never win; as in PyTorch it may be at most half the
+    kernel size, so every window contains at least one real input cell. The gradient goes to
+    the first maximum of each window (the same tie-breaking rule as PyTorch).
     """
     tx = as_tensor(x)
     if tx.ndim != 4:
@@ -134,6 +137,11 @@ def max_pool2d(
     kh, kw = _pair(kernel_size, "kernel_size")
     sh, sw = _pair(kernel_size if stride is None else stride, "stride")
     ph, pw = _pair(padding, "padding")
+    if ph > kh // 2 or pw > kw // 2:
+        raise ValueError(
+            f"padding {(ph, pw)} must be at most half the kernel size {(kh, kw)}; larger "
+            "padding creates windows that contain only padding"
+        )
     n, c, h, w = tx.shape
     oh, ow = _out_size(h, kh, sh, ph), _out_size(w, kw, sw, pw)
     xp = tx.data
