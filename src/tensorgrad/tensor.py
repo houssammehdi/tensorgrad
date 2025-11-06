@@ -80,16 +80,14 @@ class Tensor:
 
     Attributes:
         data: The underlying :class:`numpy.ndarray`.
-        grad: Accumulated gradient (same shape and dtype as ``data``) or ``None``.
     """
 
-    __slots__ = ("__weakref__", "_node", "_requires_grad", "_retains_grad", "data", "grad")
+    __slots__ = ("__weakref__", "_grad", "_node", "_requires_grad", "_retains_grad", "data")
 
     # Make NumPy defer to our reflected operators: ``ndarray + Tensor`` -> Tensor.__radd__.
     __array_ufunc__ = None
 
     data: Array
-    grad: Array | None
 
     def __init__(
         self,
@@ -98,7 +96,7 @@ class Tensor:
         dtype: DTypeLike | None = None,
     ) -> None:
         self.data = _to_array(data, dtype)
-        self.grad = None
+        self._grad: Tensor | None = None
         self._node: Node | None = None
         self._retains_grad = False
         self._requires_grad = False
@@ -113,7 +111,7 @@ class Tensor:
         """
         out = Tensor.__new__(Tensor)
         out.data = data if isinstance(data, np.ndarray) else np.asarray(data)
-        out.grad = None
+        out._grad = None
         out._node = None
         out._retains_grad = False
         out._requires_grad = False
@@ -134,6 +132,25 @@ class Tensor:
                 f"only floating-point tensors can require gradients (got {self.data.dtype})"
             )
         self._requires_grad = bool(value)
+
+    @property
+    def grad(self) -> Tensor | None:
+        """The gradient accumulated by ``backward`` (same shape and dtype), or ``None``.
+
+        It is a :class:`Tensor`. After an ordinary ``backward()`` it is a constant; after
+        ``backward(create_graph=True)`` it carries its own graph and can be differentiated
+        again. Assigning a NumPy array wraps it; the shape must match.
+        """
+        return self._grad
+
+    @grad.setter
+    def grad(self, value: Tensor | Array | None) -> None:
+        if value is not None:
+            if not isinstance(value, Tensor):
+                value = Tensor._wrap(np.asarray(value))
+            if value.shape != self.shape:
+                raise ValueError(f"grad has shape {value.shape}, expected {self.shape}")
+        self._grad = value
 
     @property
     def shape(self) -> tuple[int, ...]:
@@ -196,7 +213,8 @@ class Tensor:
     def _accumulate_grad(self, g: Array) -> None:
         g = g.astype(self.dtype, copy=False)
         # Copy on first write: ``g`` may be a read-only broadcast view or alias another array.
-        self.grad = np.array(g, copy=True) if self.grad is None else self.grad + g
+        total = np.array(g, copy=True) if self._grad is None else self._grad.data + g
+        self._grad = Tensor._wrap(total)
 
     def retain_grad(self) -> None:
         """Keep ``.grad`` for this non-leaf tensor during the next backward pass."""
@@ -207,7 +225,7 @@ class Tensor:
 
     def zero_grad(self) -> None:
         """Reset the accumulated gradient."""
-        self.grad = None
+        self._grad = None
 
     def detach(self) -> Tensor:
         """Return a tensor sharing this data but cut off from the graph."""
@@ -222,6 +240,14 @@ class Tensor:
     def numpy(self) -> Array:
         """Return the underlying array (shared memory, not a copy)."""
         return self.data
+
+    def __array__(self, dtype: DTypeLike | None = None, copy: bool | None = None) -> Array:
+        # Lets NumPy functions (np.asarray, np.testing, np.allclose, ...) read tensors.
+        if dtype is None or np.dtype(dtype) == self.dtype:
+            return self.data.copy() if copy else self.data
+        if copy is False:
+            raise ValueError(f"cannot convert {self.dtype} to {np.dtype(dtype)} without a copy")
+        return self.data.astype(dtype)
 
     def item(self) -> Any:
         """Return the value of a single-element tensor as a Python scalar."""
@@ -243,6 +269,12 @@ class Tensor:
 
     def __bool__(self) -> bool:
         return bool(self.data)
+
+    def __float__(self) -> float:
+        return float(self.data.item())
+
+    def __int__(self) -> int:
+        return int(self.data.item())
 
     def __repr__(self) -> str:
         body = np.array2string(self.data, separator=", ", prefix="Tensor(", precision=4)
@@ -299,8 +331,17 @@ class Tensor:
     def __getitem__(self, index: IndexLike) -> Tensor:
         return _shape.getitem(self, index)
 
-    # Comparisons are not differentiable and return boolean tensors. ``__eq__`` is deliberately
-    # left alone so tensors stay hashable by identity (the autograd engine relies on it).
+    # Comparisons are elementwise, not differentiable, and return boolean tensors (as in
+    # PyTorch and NumPy). Hashing stays by identity: the engine and the optimisers key their
+    # bookkeeping on id(), and a tensor can still be used as a dict key or set member.
+    __hash__ = object.__hash__
+
+    def __eq__(self, other: object) -> Tensor:  # type: ignore[override]
+        return Tensor._wrap(np.asarray(self.data == _raw(other)))
+
+    def __ne__(self, other: object) -> Tensor:  # type: ignore[override]
+        return Tensor._wrap(np.asarray(self.data != _raw(other)))
+
     def __lt__(self, other: object) -> Tensor:
         return Tensor._wrap(self.data < _raw(other))
 
@@ -365,6 +406,14 @@ class Tensor:
     def var(self, axis: Axis = None, keepdims: bool = False, correction: int = 1) -> Tensor:
         """Variance over ``axis`` with Bessel ``correction`` (1 = unbiased, 0 = population)."""
         return _reduce.var(self, axis, keepdims, correction)
+
+    def all(self, axis: Axis = None, keepdims: bool = False) -> Tensor:
+        """Whether every element along ``axis`` is true (not differentiable)."""
+        return Tensor._wrap(np.all(self.data, axis=axis, keepdims=keepdims))
+
+    def any(self, axis: Axis = None, keepdims: bool = False) -> Tensor:
+        """Whether any element along ``axis`` is true (not differentiable)."""
+        return Tensor._wrap(np.any(self.data, axis=axis, keepdims=keepdims))
 
     def argmax(self, axis: int | None = None, keepdims: bool = False) -> Tensor:
         """Indices of the maxima (not differentiable)."""

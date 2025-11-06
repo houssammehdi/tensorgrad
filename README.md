@@ -315,8 +315,8 @@ would help next.
   outputs). Freeing a node drops the closure and the activations go with it, so memory holds
   one forward pass of activations instead of growing across steps. `no_grad()` skips node
   creation entirely; evaluation and `GPT.generate` use it.
-- **Gradients are NumPy arrays**, not tensors. This keeps the engine and the optimisers
-  simple and fast, at the cost of higher-order derivatives (see limitations).
+- **Gradients flow as NumPy arrays** inside the engine, which keeps backward fast; the
+  result stored in a leaf's `.grad` is wrapped in a (constant) `Tensor`, as in PyTorch.
 - **Numerical stability.** `softmax`, `log_softmax` and `logsumexp` subtract the row max
   before `exp`, with a guard for rows that are entirely `-inf` (as in masked attention).
   `cross_entropy` works from logits with log-sum-exp and uses the fused gradient

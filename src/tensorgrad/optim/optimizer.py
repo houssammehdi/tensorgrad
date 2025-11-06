@@ -99,12 +99,13 @@ class Optimizer(ABC, Generic[StateT]):
         """Apply one update to every parameter that has a gradient."""
         for group in self.param_groups:
             for p in group.params:
-                if p.grad is None:
+                grad = p.grad
+                if grad is None:
                     continue
                 state = self.state.get(id(p))
                 if state is None:
                     state = self.state[id(p)] = self._init_state(p)
-                self._update(p, p.grad.astype(p.dtype, copy=False), group, state)
+                self._update(p, grad.data.astype(p.dtype, copy=False), group, state)
 
     @abstractmethod
     def _init_state(self, param: Tensor) -> StateT:

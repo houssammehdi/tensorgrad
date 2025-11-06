@@ -90,6 +90,50 @@ class TestConstruction:
         assert mask.dtype == np.bool_ and not mask.requires_grad
         assert (t <= 0).tolist() == [False, True]
 
+    def test_equality_is_elementwise_and_hashing_is_by_identity(self) -> None:
+        a, b = tg.Tensor([1.0, 2.0]), tg.Tensor([1.0, 3.0])
+        assert (a == b).tolist() == [True, False]
+        assert (a != b).tolist() == [False, True]
+        assert (a == 1.0).any() and not (a == b).all()
+        lookup = {a: "a", b: "b"}  # tensors remain usable as dict keys and set members
+        assert lookup[a] == "a" and len({a, b, a}) == 2
+
+    def test_numpy_interop(self) -> None:
+        t = tg.Tensor(np.arange(3.0))
+        assert np.asarray(t) is t.data  # no copy unless asked for
+        assert np.array(t, copy=True) is not t.data
+        assert np.asarray(t, dtype=np.float32).dtype == np.float32
+        np.testing.assert_allclose(t, [0.0, 1.0, 2.0])
+        assert float(tg.Tensor(2.5)) == 2.5 and int(tg.Tensor(np.array([7]))) == 7
+
+
+class TestGradAttribute:
+    def test_grad_is_a_constant_tensor(self) -> None:
+        x = tg.Tensor(np.array([1.0, 2.0]), requires_grad=True)
+        (x * x).sum().backward()
+        assert isinstance(x.grad, tg.Tensor)
+        assert not x.grad.requires_grad and x.grad.is_leaf
+        np.testing.assert_allclose(x.grad.data, [2.0, 4.0])
+
+    def test_assigning_an_array_wraps_it_and_checks_the_shape(self) -> None:
+        x = tg.Tensor(np.zeros(3), requires_grad=True)
+        x.grad = np.ones(3)
+        assert isinstance(x.grad, tg.Tensor) and x.grad.tolist() == [1.0, 1.0, 1.0]
+        with pytest.raises(ValueError, match="shape"):
+            x.grad = np.ones(4)
+        x.grad = None
+        assert x.grad is None
+
+    def test_accumulated_gradients_do_not_alias(self) -> None:
+        # ``add`` hands the same upstream array to both inputs; each leaf must own a copy.
+        a = tg.Tensor(np.zeros(2), requires_grad=True)
+        b = tg.Tensor(np.zeros(2), requires_grad=True)
+        (a + b).sum().backward()
+        assert a.grad is not None and b.grad is not None
+        assert not np.shares_memory(a.grad.data, b.grad.data)
+        a.grad.data[0] = 5.0
+        assert b.grad.data[0] == 1.0
+
 
 class TestBackward:
     def test_simple_chain_rule(self) -> None:

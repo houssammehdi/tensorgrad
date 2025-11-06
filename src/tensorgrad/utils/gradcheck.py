@@ -89,9 +89,8 @@ def gradcheck(
     (out * Tensor(weights)).sum().backward()
 
     for i in checked:
-        analytical = inputs[i].grad
-        if analytical is None:
-            analytical = np.zeros_like(inputs[i].data)
+        grad = inputs[i].grad
+        analytical = np.zeros_like(inputs[i].data) if grad is None else grad.data
         numerical = numerical_grad(fn, inputs, i, weights, eps)
         if not np.allclose(analytical, numerical, atol=atol, rtol=rtol):
             if not raise_exception:

@@ -229,7 +229,7 @@ def test_unbiased_var_of_a_single_sample_is_nan_not_an_error(shape: tuple[int, .
     v = x.var(axis=0)
     assert np.all(np.isnan(v.data))
     v.sum().backward()
-    assert x.grad is not None and np.all(np.isnan(x.grad))
+    assert x.grad is not None and np.all(np.isnan(x.grad.data))
 
 
 @pytest.mark.parametrize(

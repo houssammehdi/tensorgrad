@@ -209,15 +209,16 @@ class TestAttention:
         x = tg.Tensor(np.random.default_rng(0).standard_normal((2, 7, 8)), requires_grad=True)
         mha(x)[:, position].sum().backward()
         assert x.grad is not None
-        assert np.all(x.grad[:, position + 1 :] == 0.0)  # exactly zero: no leakage at all
-        assert np.all(np.abs(x.grad[:, : position + 1]).sum(axis=-1) > 0)  # past does matter
+        grad = x.grad.data
+        assert np.all(grad[:, position + 1 :] == 0.0)  # exactly zero: no leakage at all
+        assert np.all(np.abs(grad[:, : position + 1]).sum(axis=-1) > 0)  # past does matter
 
     def test_non_causal_attention_sees_the_future(self) -> None:
         mha = nn.MultiHeadAttention(8, 2, causal=False)
         x = tg.Tensor(np.random.default_rng(0).standard_normal((1, 5, 8)), requires_grad=True)
         mha(x)[:, 0].sum().backward()
         assert x.grad is not None
-        assert np.all(np.abs(x.grad[:, 1:]).sum(axis=-1) > 0)
+        assert np.all(np.abs(x.grad.data[:, 1:]).sum(axis=-1) > 0)
 
     def test_causal_mask_helper(self) -> None:
         mask = nn.attention.causal_mask(3, 3)
@@ -281,7 +282,7 @@ class TestGPT:
         grad = model.tok_emb.weight.grad
         assert grad is not None
         # Rows never used as inputs still get gradient through the output head.
-        assert np.abs(grad[7]).sum() > 0
+        assert np.abs(grad.data[7]).sum() > 0
 
     def test_future_tokens_do_not_change_past_logits(self) -> None:
         model = nn.GPT(self.config())

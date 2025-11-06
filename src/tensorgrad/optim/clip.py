@@ -20,7 +20,7 @@ def clip_grad_norm_(params: Iterable[Tensor], max_norm: float, eps: float = 1e-6
     Returns:
         The total norm before clipping.
     """
-    with_grad = [(p, p.grad) for p in params if p.grad is not None]
+    with_grad = [(p, p.grad.data) for p in params if p.grad is not None]
     total = math.sqrt(
         math.fsum(float(np.sum(np.square(g, dtype=np.float64))) for _, g in with_grad)
     )
