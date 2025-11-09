@@ -28,16 +28,16 @@ def matmul(a: TensorLike, b: TensorLike) -> Tensor:
     if ta.ndim == 1:
         out = out[..., 0, :] if tb.ndim > 1 else out[..., 0]
 
-    def backward(g: Array) -> tuple[Array | None, Array | None]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array | None, Array | None]:
         g2 = g
         if tb.ndim == 1:
             g2 = g2[..., None]
         if ta.ndim == 1:
             g2 = np.expand_dims(g2, -2)
         ga = gb = None
-        if ta.requires_grad:
+        if need[0]:
             ga = unbroadcast(g2 @ np.swapaxes(b2, -1, -2), a2.shape).reshape(ta.shape)
-        if tb.requires_grad:
+        if need[1]:
             gb = unbroadcast(np.swapaxes(a2, -1, -2) @ g2, b2.shape).reshape(tb.shape)
         return ga, gb
 

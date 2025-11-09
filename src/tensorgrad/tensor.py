@@ -8,9 +8,10 @@ from typing import TYPE_CHECKING, Any, Self, SupportsIndex, TypeAlias, cast
 
 import numpy as np
 
+from tensorgrad import autograd as _autograd
 from tensorgrad._random import get_rng
 from tensorgrad._types import Array, Axis, DTypeLike, FloatDType, Scalar, ShapeLike
-from tensorgrad.autograd import Node, run_backward
+from tensorgrad.autograd import Node
 
 if TYPE_CHECKING:
     from types import EllipsisType
@@ -195,22 +196,14 @@ class Tensor:
             grad: d(loss)/d(self). May be omitted only when the tensor has a single element.
             retain_graph: Keep the graph's saved values so ``backward`` can run again.
         """
-        if not self.requires_grad:
-            raise RuntimeError("backward() called on a tensor that does not require grad")
-        if grad is None:
-            if self.size != 1:
-                raise RuntimeError(
-                    "grad can be implicitly created only for single-element outputs; "
-                    f"got shape {self.shape}"
-                )
-            seed = np.ones_like(self.data)
-        else:
-            seed = np.asarray(grad.data if isinstance(grad, Tensor) else grad, dtype=self.dtype)
-            if seed.shape != self.shape:
-                raise ValueError(f"grad has shape {seed.shape}, expected {self.shape}")
-        run_backward(self, seed, retain_graph=retain_graph)
+        _autograd.backward(self, grad, retain_graph=retain_graph)
 
-    def _accumulate_grad(self, g: Array) -> None:
+    def _accumulate_grad(self, g: Array | Tensor) -> None:
+        if isinstance(g, Tensor):  # create_graph: keep the gradient's own graph
+            if g.dtype != self.dtype:
+                g = g.astype(self.dtype)
+            self._grad = g if self._grad is None else self._grad + g
+            return
         g = g.astype(self.dtype, copy=False)
         # Copy on first write: ``g`` may be a read-only broadcast view or alias another array.
         total = np.array(g, copy=True) if self._grad is None else self._grad.data + g

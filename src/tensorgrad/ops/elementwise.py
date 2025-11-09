@@ -32,10 +32,10 @@ def add(a: TensorLike, b: TensorLike) -> Tensor:
     """``a + b`` with NumPy broadcasting."""
     ta, tb = coerce_pair(a, b)
 
-    def backward(g: Array) -> tuple[Array | None, Array | None]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array | None, Array | None]:
         return (
-            unbroadcast(g, ta.shape) if ta.requires_grad else None,
-            unbroadcast(g, tb.shape) if tb.requires_grad else None,
+            unbroadcast(g, ta.shape) if need[0] else None,
+            unbroadcast(g, tb.shape) if need[1] else None,
         )
 
     return make_result(ta.data + tb.data, (ta, tb), backward, "add")
@@ -45,10 +45,10 @@ def sub(a: TensorLike, b: TensorLike) -> Tensor:
     """``a - b`` with NumPy broadcasting."""
     ta, tb = coerce_pair(a, b)
 
-    def backward(g: Array) -> tuple[Array | None, Array | None]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array | None, Array | None]:
         return (
-            unbroadcast(g, ta.shape) if ta.requires_grad else None,
-            unbroadcast(-g, tb.shape) if tb.requires_grad else None,
+            unbroadcast(g, ta.shape) if need[0] else None,
+            unbroadcast(-g, tb.shape) if need[1] else None,
         )
 
     return make_result(ta.data - tb.data, (ta, tb), backward, "sub")
@@ -58,10 +58,10 @@ def mul(a: TensorLike, b: TensorLike) -> Tensor:
     """``a * b`` with NumPy broadcasting."""
     ta, tb = coerce_pair(a, b)
 
-    def backward(g: Array) -> tuple[Array | None, Array | None]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array | None, Array | None]:
         return (
-            unbroadcast(g * tb.data, ta.shape) if ta.requires_grad else None,
-            unbroadcast(g * ta.data, tb.shape) if tb.requires_grad else None,
+            unbroadcast(g * tb.data, ta.shape) if need[0] else None,
+            unbroadcast(g * ta.data, tb.shape) if need[1] else None,
         )
 
     return make_result(ta.data * tb.data, (ta, tb), backward, "mul")
@@ -72,10 +72,10 @@ def div(a: TensorLike, b: TensorLike) -> Tensor:
     ta, tb = coerce_pair(a, b)
     out = ta.data / tb.data
 
-    def backward(g: Array) -> tuple[Array | None, Array | None]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array | None, Array | None]:
         return (
-            unbroadcast(g / tb.data, ta.shape) if ta.requires_grad else None,
-            unbroadcast(-g * out / tb.data, tb.shape) if tb.requires_grad else None,
+            unbroadcast(g / tb.data, ta.shape) if need[0] else None,
+            unbroadcast(-g * out / tb.data, tb.shape) if need[1] else None,
         )
 
     return make_result(out, (ta, tb), backward, "div")
@@ -85,7 +85,7 @@ def neg(a: TensorLike) -> Tensor:
     """``-a``."""
     ta = as_tensor(a)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (-g,)
 
     return make_result(-ta.data, (ta,), backward, "neg")
@@ -100,12 +100,12 @@ def pow(base: TensorLike, exponent: TensorLike) -> Tensor:
     tb, te = coerce_pair(base, exponent)
     out = tb.data**te.data
 
-    def backward(g: Array) -> tuple[Array | None, Array | None]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array | None, Array | None]:
         g_base = None
-        if tb.requires_grad:
+        if need[0]:
             g_base = unbroadcast(g * te.data * tb.data ** (te.data - 1), tb.shape)
         g_exp = None
-        if te.requires_grad:
+        if need[1]:
             positive = tb.data > 0
             log_base = np.log(np.where(positive, tb.data, 1))
             g_exp = unbroadcast(np.where(positive, g * out * log_base, 0), te.shape)
@@ -119,7 +119,7 @@ def exp(a: TensorLike) -> Tensor:
     ta = as_tensor(a)
     out = np.exp(ta.data)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (g * out,)
 
     return make_result(out, (ta,), backward, "exp")
@@ -129,7 +129,7 @@ def log(a: TensorLike) -> Tensor:
     """Elementwise natural logarithm."""
     ta = as_tensor(a)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (g / ta.data,)
 
     return make_result(np.log(ta.data), (ta,), backward, "log")
@@ -140,7 +140,7 @@ def sqrt(a: TensorLike) -> Tensor:
     ta = as_tensor(a)
     out = np.sqrt(ta.data)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (g * 0.5 / out,)
 
     return make_result(out, (ta,), backward, "sqrt")
@@ -151,7 +151,7 @@ def tanh(a: TensorLike) -> Tensor:
     ta = as_tensor(a)
     out = np.tanh(ta.data)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (g * (1 - out * out),)
 
     return make_result(out, (ta,), backward, "tanh")
@@ -165,7 +165,7 @@ def sigmoid(a: TensorLike) -> Tensor:
     z = np.exp(-np.abs(x))
     out = np.where(x >= 0, 1 / (1 + z), z / (1 + z)).astype(x.dtype, copy=False)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (g * out * (1 - out),)
 
     return make_result(out, (ta,), backward, "sigmoid")
@@ -176,7 +176,7 @@ def relu(a: TensorLike) -> Tensor:
     ta = as_tensor(a)
     positive = ta.data > 0
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (g * positive,)
 
     return make_result(np.maximum(ta.data, 0), (ta,), backward, "relu")
@@ -197,7 +197,7 @@ def gelu(a: TensorLike) -> Tensor:
     t = np.tanh(inner)
     out = 0.5 * x * (1 + t)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         d_inner = _GELU_C * (1 + 3 * 0.044715 * x * x)
         return (g * (0.5 * (1 + t) + 0.5 * x * (1 - t * t) * d_inner),)
 
@@ -217,7 +217,7 @@ def astype(a: TensorLike, dtype: DTypeLike) -> Tensor:
     if not np.issubdtype(out.dtype, np.floating):
         return Tensor._wrap(out)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (g.astype(source),)
 
     return make_result(out, (ta,), backward, "astype")

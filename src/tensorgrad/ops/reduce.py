@@ -25,7 +25,7 @@ def sum(a: TensorLike, axis: Axis = None, keepdims: bool = False) -> Tensor:
     axes = normalize_axes(axis, ta.ndim)
     out = _drop_axes(np.sum(ta.data, axis=axes, keepdims=True), axes, keepdims)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (expand_reduced(g, ta.shape, axes, keepdims),)
 
     return make_result(np.asarray(out), (ta,), backward, "sum")
@@ -45,7 +45,7 @@ def mean(a: TensorLike, axis: Axis = None, keepdims: bool = False) -> Tensor:
     n = _count(ta.shape, axes)
     out = _drop_axes(np.mean(ta.data, axis=axes, keepdims=True), axes, keepdims)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (expand_reduced(g / n, ta.shape, axes, keepdims),)
 
     return make_result(np.asarray(out), (ta,), backward, "mean")
@@ -59,7 +59,7 @@ def _extremum(
     kept = reducer(ta.data, axis=axes, keepdims=True)
     out = _drop_axes(kept, axes, keepdims)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         # Split the gradient evenly between tied extrema (a valid subgradient).
         winners = ta.data == kept
         share = winners / winners.sum(axis=axes, keepdims=True)
@@ -95,7 +95,7 @@ def var(a: TensorLike, axis: Axis = None, keepdims: bool = False, correction: in
     # gradient are NaN (rather than a ZeroDivisionError during backward).
     scale = 2 / denom if denom else float("nan")
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (expand_reduced(g, ta.shape, axes, keepdims) * scale * centered,)
 
     return make_result(np.asarray(out), (ta,), backward, "var")

@@ -27,13 +27,13 @@ def linear(x: TensorLike, weight: TensorLike, bias: TensorLike | None = None) ->
     if tb is not None:
         out = out + tb.data
 
-    def backward(g: Array) -> tuple[Array | None, ...]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array | None, ...]:
         g2 = g.reshape(-1, g.shape[-1])
-        gx = (g @ tw.data) if tx.requires_grad else None
-        gw = (g2.T @ tx.data.reshape(-1, tx.shape[-1])) if tw.requires_grad else None
+        gx = (g @ tw.data) if need[0] else None
+        gw = (g2.T @ tx.data.reshape(-1, tx.shape[-1])) if need[1] else None
         if tb is None:
             return gx, gw
-        return gx, gw, (g2.sum(axis=0) if tb.requires_grad else None)
+        return gx, gw, (g2.sum(axis=0) if need[2] else None)
 
     parents = (tx, tw) if tb is None else (tx, tw, tb)
     return make_result(out, parents, backward, "linear")
@@ -63,19 +63,21 @@ def layer_norm(
         out = out + tb.data
     lead = tuple(range(tx.ndim - 1))
 
-    def backward(g: Array) -> tuple[Array | None, ...]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array | None, ...]:
         grads: list[Array | None] = []
-        gh = g if tw is None else g * tw.data
-        if tx.requires_grad:
+        if need[0]:
+            gh = g if tw is None else g * tw.data
             mean_gh = gh.sum(axis=-1, keepdims=True) / d
             mean_ghx = (gh * xhat).sum(axis=-1, keepdims=True) / d
             grads.append(rstd * (gh - mean_gh - xhat * mean_ghx))
         else:
             grads.append(None)
+        k = 1  # parents are (x, [weight], [bias]); need[k] follows that order
         if tw is not None:
-            grads.append((g * xhat).sum(axis=lead) if tw.requires_grad else None)
+            grads.append((g * xhat).sum(axis=lead) if need[k] else None)
+            k += 1
         if tb is not None:
-            grads.append(g.sum(axis=lead) if tb.requires_grad else None)
+            grads.append(g.sum(axis=lead) if need[k] else None)
         return tuple(grads)
 
     parents = tuple(t for t in (tx, tw, tb) if t is not None)
@@ -144,7 +146,7 @@ def embedding(indices: Tensor | Array, weight: TensorLike) -> Tensor:
         )
     out = tw.data[idx]
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         grad = np.zeros_like(tw.data)
         np.add.at(grad, idx.reshape(-1), g.reshape(-1, tw.shape[1]))
         return (grad,)
@@ -169,7 +171,7 @@ def dropout(
         keep = (rng or get_rng()).random(tx.shape, dtype=np.float32) >= p
         mask = keep.astype(tx.dtype) / np.asarray(1.0 - p, dtype=tx.dtype)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (g * mask,)
 
     return make_result(tx.data * mask, (tx,), backward, "dropout")

@@ -63,7 +63,7 @@ def cross_entropy(
     else:
         raise ValueError(f"unknown reduction {reduction!r}")
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         grad = np.exp(logp)
         grad[rows, safe_t] -= 1
         grad *= valid[:, None]

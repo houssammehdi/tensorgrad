@@ -101,17 +101,17 @@ def conv2d(
         out = out + tb.data
     result = out.reshape(n, oh, ow, c_out).transpose(0, 3, 1, 2)
 
-    def backward(g: Array) -> tuple[Array | None, ...]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array | None, ...]:
         g_mat = g.transpose(0, 2, 3, 1).reshape(-1, c_out)
         gx = gw = gb = None
-        if tx.requires_grad:
+        if need[0]:
             d_cols = (g_mat @ w_mat).reshape(n, oh, ow, c, kh, kw)
             dxp = np.zeros(xp.shape, dtype=g.dtype)
             _col2im_add(dxp, d_cols, (kh, kw), (sh, sw), (oh, ow))
             gx = dxp[:, :, ph : ph + h, pw : pw + w]
-        if tw.requires_grad:
+        if need[1]:
             gw = (g_mat.T @ cols).reshape(tw.shape)
-        if tb is not None and tb.requires_grad:
+        if tb is not None and need[2]:
             gb = g_mat.sum(axis=0)
         return (gx, gw) if tb is None else (gx, gw, gb)
 
@@ -152,7 +152,7 @@ def max_pool2d(
     winner = np.argmax(flat, axis=-1)
     out = np.take_along_axis(flat, winner[..., None], axis=-1)[..., 0]
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         dxp = np.zeros(xp.shape, dtype=g.dtype)
         for i in range(kh):
             for j in range(kw):

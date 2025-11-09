@@ -36,7 +36,7 @@ def reshape(a: TensorLike, shape: Sequence[int]) -> Tensor:
     """Return the same elements with a new shape (one entry may be ``-1``)."""
     ta = as_tensor(a)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (g.reshape(ta.shape),)
 
     return make_result(ta.data.reshape(tuple(shape)), (ta,), backward, "reshape")
@@ -50,7 +50,7 @@ def permute(a: TensorLike, dims: Sequence[int]) -> Tensor:
         raise ValueError(f"dims {tuple(dims)} is not a permutation of {ta.ndim} axes")
     inverse = tuple(int(i) for i in np.argsort(order))
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (g.transpose(inverse),)
 
     return make_result(ta.data.transpose(order), (ta,), backward, "permute")
@@ -126,7 +126,7 @@ def getitem(a: TensorLike, index: IndexLike) -> Tensor:
     idx, advanced = _normalize_index(index)
     out = ta.data[idx]
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         grad = np.zeros_like(ta.data)
         if advanced:
             np.add.at(grad, idx, g)
@@ -145,9 +145,9 @@ def concat(tensors: Sequence[TensorLike], axis: int = 0) -> Tensor:
     ax = normalize_axis(axis, ts[0].ndim)
     boundaries = np.cumsum([t.shape[ax] for t in ts])[:-1]
 
-    def backward(g: Array) -> tuple[Array | None, ...]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array | None, ...]:
         pieces = np.split(g, boundaries, axis=ax)
-        return tuple(p if t.requires_grad else None for p, t in zip(pieces, ts, strict=True))
+        return tuple(p if keep else None for p, keep in zip(pieces, need, strict=True))
 
     data = np.concatenate([t.data for t in ts], axis=ax)
     return make_result(data, tuple(ts), backward, "concat")
@@ -160,8 +160,8 @@ def stack(tensors: Sequence[TensorLike], axis: int = 0) -> Tensor:
     ts = [as_tensor(t) for t in tensors]
     ax = normalize_axis(axis, ts[0].ndim + 1)
 
-    def backward(g: Array) -> tuple[Array | None, ...]:
-        return tuple(np.take(g, i, axis=ax) if t.requires_grad else None for i, t in enumerate(ts))
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array | None, ...]:
+        return tuple(np.take(g, i, axis=ax) if keep else None for i, keep in enumerate(need))
 
     data = np.stack([t.data for t in ts], axis=ax)
     return make_result(data, tuple(ts), backward, "stack")
@@ -178,10 +178,10 @@ def where(condition: Tensor | Array | bool, a: TensorLike, b: TensorLike) -> Ten
     ta, tb = coerce_pair(a, b)
     zero = np.zeros((), dtype=np.result_type(ta.dtype, tb.dtype))
 
-    def backward(g: Array) -> tuple[Array | None, Array | None]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array | None, Array | None]:
         return (
-            unbroadcast(np.where(cond, g, zero), ta.shape) if ta.requires_grad else None,
-            unbroadcast(np.where(cond, zero, g), tb.shape) if tb.requires_grad else None,
+            unbroadcast(np.where(cond, g, zero), ta.shape) if need[0] else None,
+            unbroadcast(np.where(cond, zero, g), tb.shape) if need[1] else None,
         )
 
     return make_result(np.where(cond, ta.data, tb.data), (ta, tb), backward, "where")
@@ -197,7 +197,7 @@ def masked_fill(a: TensorLike, mask: Tensor | Array, value: float) -> Tensor:
     m = _mask_array(mask)
     out = np.where(m, np.asarray(value, dtype=ta.dtype), ta.data)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (unbroadcast(np.where(m, np.zeros((), dtype=g.dtype), g), ta.shape),)
 
     return make_result(out, (ta,), backward, "masked_fill")

@@ -30,7 +30,7 @@ def softmax(a: TensorLike, axis: int = -1) -> Tensor:
     e = np.exp(_shifted(ta.data, ax))
     s = e / np.sum(e, axis=ax, keepdims=True)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (s * (g - np.sum(g * s, axis=ax, keepdims=True)),)
 
     return make_result(s, (ta,), backward, "softmax")
@@ -53,7 +53,7 @@ def log_softmax(a: TensorLike, axis: int = -1) -> Tensor:
     ax = normalize_axis(axis, ta.ndim)
     out = _log_softmax_array(ta.data, ax)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         return (g - np.exp(out) * np.sum(g, axis=ax, keepdims=True),)
 
     return make_result(out, (ta,), backward, "log_softmax")
@@ -68,7 +68,7 @@ def logsumexp(a: TensorLike, axis: int = -1, keepdims: bool = False) -> Tensor:
     kept = np.log(np.sum(np.exp(ta.data - m), axis=ax, keepdims=True)) + m
     out = kept if keepdims else np.squeeze(kept, axis=ax)
 
-    def backward(g: Array) -> tuple[Array]:
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
         g_kept = g if keepdims else np.expand_dims(g, ax)
         return (g_kept * np.exp(ta.data - kept),)
 

@@ -260,6 +260,87 @@ class TestBackward:
         assert x.astype(np.float32).requires_grad  # float casts stay differentiable
 
 
+def recording_op(a: tg.Tensor, b: tg.Tensor, log: list[tuple[bool, ...]]) -> tg.Tensor:
+    """``a * b`` whose backward records which input gradients the engine asked for."""
+    from tensorgrad.ops._util import make_result
+
+    def backward(g: np.ndarray, need: tuple[bool, ...]) -> tuple[np.ndarray | None, ...]:
+        log.append(need)
+        return (g * b.data if need[0] else None, g * a.data if need[1] else None)
+
+    return make_result(a.data * b.data, (a, b), backward, "recording_mul")
+
+
+class TestFunctionalGrad:
+    def test_returns_gradients_without_touching_dot_grad(self) -> None:
+        x = tg.Tensor(np.array([1.0, 2.0]), requires_grad=True)
+        w = tg.Tensor(np.array([3.0, 4.0]), requires_grad=True)
+        (gx,) = tg.autograd.grad((x * w).sum(), x)
+        assert isinstance(gx, tg.Tensor) and gx.tolist() == [3.0, 4.0]
+        assert x.grad is None and w.grad is None
+
+    def test_gradient_with_respect_to_an_intermediate_tensor(self) -> None:
+        x = tg.Tensor(np.array(2.0), requires_grad=True)
+        h = x * x  # dL/dh = 3h^2 = 48 for L = h^3
+        gh, gx = tg.autograd.grad(h**3, [h, x])
+        assert gh is not None and gx is not None
+        assert gh.item() == pytest.approx(48.0)
+        assert gx.item() == pytest.approx(48.0 * 2 * 2.0)  # chain rule through h
+
+    def test_multiple_outputs_and_explicit_grad_outputs(self) -> None:
+        x = tg.Tensor(np.array([1.0, -1.0]), requires_grad=True)
+        (g,) = tg.autograd.grad([x * 2, x * x], x, grad_outputs=[np.ones(2), np.array([1.0, 3.0])])
+        assert g is not None
+        np.testing.assert_allclose(g.data, [2 + 2 * 1.0, 2 + 3 * 2 * -1.0])
+
+    def test_only_the_needed_gradients_are_computed(self) -> None:
+        x = tg.Tensor(np.array([1.0, 2.0]), requires_grad=True)
+        w = tg.Tensor(np.array([3.0, 4.0]), requires_grad=True)
+        log: list[tuple[bool, ...]] = []
+        tg.autograd.grad(recording_op(x, w, log).sum(), x)
+        assert log == [(True, False)]  # the weight gradient is never evaluated
+        recording_op(x, w, log).sum().backward()
+        assert log[-1] == (True, True)
+
+    def test_unused_inputs(self) -> None:
+        x = tg.Tensor(np.ones(2), requires_grad=True)
+        unused = tg.Tensor(np.ones(2), requires_grad=True)
+        with pytest.raises(RuntimeError, match="allow_unused"):
+            tg.autograd.grad((x * 2).sum(), [x, unused])
+        gx, gu = tg.autograd.grad((x * 2).sum(), [x, unused], allow_unused=True)
+        assert gx is not None and gu is None
+
+    def test_rejects_tensors_without_a_graph(self) -> None:
+        x = tg.Tensor(np.ones(2), requires_grad=True)
+        with pytest.raises(RuntimeError, match="input 0 does not require grad"):
+            tg.autograd.grad((x * 2).sum(), tg.Tensor(np.ones(2)))
+        with pytest.raises(RuntimeError, match="output 0 does not require grad"):
+            tg.autograd.grad(tg.Tensor(np.ones(1)), x)
+        with pytest.raises(RuntimeError, match="single-element"):
+            tg.autograd.grad(x * 2, x)
+
+    def test_graph_is_freed_unless_retained(self) -> None:
+        x = tg.Tensor(np.ones(2), requires_grad=True)
+        y = (x * x).sum()
+        tg.autograd.grad(y, x, retain_graph=True)
+        tg.autograd.grad(y, x)
+        with pytest.raises(RuntimeError, match="second time"):
+            tg.autograd.grad(y, x)
+
+    def test_returned_gradients_are_fresh_arrays(self) -> None:
+        # The sum's VJP is a read-only broadcast view of the seed; the caller gets a copy.
+        x = tg.Tensor(np.zeros((2, 3)), requires_grad=True)
+        (g,) = tg.autograd.grad(x.sum(), x)
+        assert g is not None and g.data.flags.writeable and g.data.flags.owndata
+        g.data[0, 0] = 7.0
+
+    def test_backward_accepts_several_roots(self) -> None:
+        x = tg.Tensor(np.array([1.0, 2.0]), requires_grad=True)
+        tg.autograd.backward([(x * 3).sum(), (x * x).sum()])
+        assert x.grad is not None
+        np.testing.assert_allclose(x.grad.data, [3 + 2.0, 3 + 4.0])
+
+
 class TestGradMode:
     def test_no_grad_context(self) -> None:
         x = tg.Tensor(np.ones(2), requires_grad=True)
@@ -306,7 +387,7 @@ class TestGradcheckUtility:
 
         def bad_square(a: tg.Tensor) -> tg.Tensor:
             t = as_tensor(a)
-            return make_result(t.data**2, (t,), lambda g: (g * t.data,), "bad_square")
+            return make_result(t.data**2, (t,), lambda g, need: (g * t.data,), "bad_square")
 
         x = tg.Tensor(np.random.default_rng(0).standard_normal(4), requires_grad=True)
         with pytest.raises(GradcheckError, match="mismatch"):
