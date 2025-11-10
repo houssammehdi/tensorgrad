@@ -9,9 +9,18 @@ import numpy as np
 
 from tensorgrad._types import Array, Axis
 from tensorgrad.ops._util import as_tensor, expand_reduced, make_result, normalize_axes
+from tensorgrad.ops.shape import broadcast_to, reshape
 from tensorgrad.tensor import Tensor, TensorLike
 
 __all__ = ["max", "mean", "min", "sum", "var"]
+
+Need = tuple[bool, ...]
+
+
+def _expand(g: Tensor, shape: tuple[int, ...], axes: tuple[int, ...]) -> Tensor:
+    """Differentiable :func:`expand_reduced`: put reduced axes back (size 1), broadcast."""
+    kept = tuple(1 if i in axes else n for i, n in enumerate(shape))
+    return broadcast_to(reshape(g, kept), shape)
 
 
 def _drop_axes(kept: Array, axes: tuple[int, ...], keepdims: bool) -> Array:
@@ -25,10 +34,13 @@ def sum(a: TensorLike, axis: Axis = None, keepdims: bool = False) -> Tensor:
     axes = normalize_axes(axis, ta.ndim)
     out = _drop_axes(np.sum(ta.data, axis=axes, keepdims=True), axes, keepdims)
 
-    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
+    def backward(g: Array, need: Need) -> tuple[Array]:
         return (expand_reduced(g, ta.shape, axes, keepdims),)
 
-    return make_result(np.asarray(out), (ta,), backward, "sum")
+    def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor]:
+        return (_expand(g, ta.shape, axes),)
+
+    return make_result(np.asarray(out), (ta,), backward, "sum", graph=graph)
 
 
 def _count(shape: tuple[int, ...], axes: tuple[int, ...]) -> int:
@@ -45,10 +57,13 @@ def mean(a: TensorLike, axis: Axis = None, keepdims: bool = False) -> Tensor:
     n = _count(ta.shape, axes)
     out = _drop_axes(np.mean(ta.data, axis=axes, keepdims=True), axes, keepdims)
 
-    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
+    def backward(g: Array, need: Need) -> tuple[Array]:
         return (expand_reduced(g / n, ta.shape, axes, keepdims),)
 
-    return make_result(np.asarray(out), (ta,), backward, "mean")
+    def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor]:
+        return (_expand(g / n, ta.shape, axes),)
+
+    return make_result(np.asarray(out), (ta,), backward, "mean", graph=graph)
 
 
 def _extremum(
@@ -59,13 +74,20 @@ def _extremum(
     kept = reducer(ta.data, axis=axes, keepdims=True)
     out = _drop_axes(kept, axes, keepdims)
 
-    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
+    def share() -> Array:
         # Split the gradient evenly between tied extrema (a valid subgradient).
         winners = ta.data == kept
-        share = winners / winners.sum(axis=axes, keepdims=True)
-        return (expand_reduced(g, ta.shape, axes, keepdims) * share,)
+        split: Array = winners / winners.sum(axis=axes, keepdims=True)
+        return split
 
-    return make_result(np.asarray(out), (ta,), backward, op)
+    def backward(g: Array, need: Need) -> tuple[Array]:
+        return (expand_reduced(g, ta.shape, axes, keepdims) * share(),)
+
+    def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor]:
+        # The selection is piecewise constant: a constant mask times the gradient.
+        return (_expand(g, ta.shape, axes) * share(),)
+
+    return make_result(np.asarray(out), (ta,), backward, op, graph=graph)
 
 
 def max(a: TensorLike, axis: Axis = None, keepdims: bool = False) -> Tensor:
@@ -95,7 +117,10 @@ def var(a: TensorLike, axis: Axis = None, keepdims: bool = False, correction: in
     # gradient are NaN (rather than a ZeroDivisionError during backward).
     scale = 2 / denom if denom else float("nan")
 
-    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
+    def backward(g: Array, need: Need) -> tuple[Array]:
         return (expand_reduced(g, ta.shape, axes, keepdims) * scale * centered,)
 
-    return make_result(np.asarray(out), (ta,), backward, "var")
+    def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor]:
+        return (_expand(g, ta.shape, axes) * (scale * (ta - mean(ta, axes, keepdims=True))),)
+
+    return make_result(np.asarray(out), (ta,), backward, "var", graph=graph)

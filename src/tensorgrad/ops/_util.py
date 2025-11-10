@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from tensorgrad._types import Array, Axis
-from tensorgrad.autograd import BackwardFn, Node, is_grad_enabled
+from tensorgrad.autograd import BackwardFn, GraphBackwardFn, Node, is_grad_enabled
 from tensorgrad.tensor import Tensor, TensorLike
 
 
@@ -25,12 +25,24 @@ def coerce_pair(a: TensorLike, b: TensorLike) -> tuple[Tensor, Tensor]:
     return as_tensor(a, tb), as_tensor(b, ta)
 
 
-def make_result(data: Array, parents: tuple[Tensor, ...], backward: BackwardFn, op: str) -> Tensor:
-    """Wrap an op's output, recording a graph node if any input requires grad."""
+def make_result(
+    data: Array,
+    parents: tuple[Tensor, ...],
+    backward: BackwardFn,
+    op: str,
+    *,
+    graph: GraphBackwardFn | None = None,
+) -> Tensor:
+    """Wrap an op's output, recording a graph node if any input requires grad.
+
+    ``backward`` is the op's VJP on NumPy arrays (the fast path of an ordinary backward
+    pass); ``graph`` is the same VJP written with differentiable tensor ops, which
+    ``create_graph=True`` uses so that gradients can be differentiated again.
+    """
     out = Tensor._wrap(data)
     if is_grad_enabled() and any(p.requires_grad for p in parents):
         out._requires_grad = True
-        out._node = Node(op, parents, backward)
+        out._node = Node(op, parents, backward, graph)
     return out
 
 

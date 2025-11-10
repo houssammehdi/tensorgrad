@@ -10,6 +10,7 @@ from tensorgrad._random import get_rng, manual_seed
 from tensorgrad.autograd import enable_grad, is_grad_enabled, no_grad
 from tensorgrad.ops import (
     add,
+    broadcast_to,
     concat,
     conv2d,
     cross_entropy,
@@ -72,6 +73,7 @@ __all__ = [
     "__version__",
     "add",
     "arange",
+    "broadcast_to",
     "concat",
     "conv2d",
     "cross_entropy",

@@ -189,14 +189,22 @@ class Tensor:
         return _shape.permute(self, tuple(reversed(range(self.ndim))))
 
     # ------------------------------------------------------------------ autograd
-    def backward(self, grad: Tensor | Array | None = None, retain_graph: bool = False) -> None:
+    def backward(
+        self,
+        grad: Tensor | Array | None = None,
+        retain_graph: bool | None = None,
+        create_graph: bool = False,
+    ) -> None:
         """Backpropagate from this tensor, accumulating gradients into the leaves' ``.grad``.
 
         Args:
             grad: d(loss)/d(self). May be omitted only when the tensor has a single element.
             retain_graph: Keep the graph's saved values so ``backward`` can run again.
+                Defaults to ``create_graph``.
+            create_graph: Record the backward pass too, so every ``.grad`` it produces is
+                a tensor with its own graph that can be differentiated again.
         """
-        _autograd.backward(self, grad, retain_graph=retain_graph)
+        _autograd.backward(self, grad, retain_graph=retain_graph, create_graph=create_graph)
 
     def _accumulate_grad(self, g: Array | Tensor) -> None:
         if isinstance(g, Tensor):  # create_graph: keep the gradient's own graph

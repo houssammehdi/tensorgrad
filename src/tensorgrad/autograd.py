@@ -348,6 +348,7 @@ def backward(
     tensors: Tensor | Sequence[Tensor],
     grad_tensors: GradOutputs = None,
     retain_graph: bool | None = None,
+    create_graph: bool = False,
 ) -> None:
     """Accumulate d(sum of ``tensors``)/d(leaf) into the ``.grad`` of every leaf.
 
@@ -355,13 +356,17 @@ def backward(
         tensors: Outputs to differentiate (each must require grad).
         grad_tensors: Upstream gradient per output (``None`` = ones, single elements only).
         retain_graph: Keep the graph's saved values so it can be backpropagated again.
+            Defaults to ``create_graph``.
+        create_graph: Build the graph of the backward pass itself, so the accumulated
+            ``.grad`` tensors can be differentiated again (higher-order derivatives).
     """
     outputs = _as_tensors(tensors, "tensors")
     for out in outputs:
         if not out.requires_grad:
             raise RuntimeError("backward() called on a tensor that does not require grad")
-    seeds = _seeds(outputs, grad_tensors, create_graph=False)
-    _run_backward(outputs, seeds, retain_graph=bool(retain_graph), create_graph=False, targets=None)
+    seeds = _seeds(outputs, grad_tensors, create_graph)
+    retain = create_graph if retain_graph is None else retain_graph
+    _run_backward(outputs, seeds, retain_graph=retain, create_graph=create_graph, targets=None)
 
 
 def grad(
@@ -369,6 +374,7 @@ def grad(
     inputs: Tensor | Sequence[Tensor],
     grad_outputs: GradOutputs = None,
     retain_graph: bool | None = None,
+    create_graph: bool = False,
     allow_unused: bool = False,
 ) -> tuple[Tensor | None, ...]:
     """Gradients of ``outputs`` with respect to ``inputs``, returned instead of accumulated.
@@ -381,7 +387,12 @@ def grad(
         outputs: Tensors to differentiate (each must require grad).
         inputs: Tensors to differentiate with respect to (each must require grad).
         grad_outputs: Upstream gradient per output (``None`` = ones, single elements only).
-        retain_graph: Keep the graph so it can be backpropagated again.
+            With ``create_graph`` these may require grad themselves; the result is then
+            differentiable with respect to them too (the basis of the double-VJP trick).
+        retain_graph: Keep the graph so it can be backpropagated again. Defaults to
+            ``create_graph``.
+        create_graph: Return gradients that carry their own graph, so they can be
+            differentiated again (Hessian-vector products, gradient penalties, MAML...).
         allow_unused: Return ``None`` for inputs the outputs do not depend on, instead of
             raising.
 
@@ -398,9 +409,10 @@ def grad(
     for i, inp in enumerate(ins):
         if not inp.requires_grad:
             raise RuntimeError(f"input {i} does not require grad")
-    seeds = _seeds(outs, grad_outputs, create_graph=False)
+    seeds = _seeds(outs, grad_outputs, create_graph)
+    retain = create_graph if retain_graph is None else retain_graph
     captured = _run_backward(
-        outs, seeds, retain_graph=bool(retain_graph), create_graph=False, targets=ins
+        outs, seeds, retain_graph=retain, create_graph=create_graph, targets=ins
     )
     result: list[Tensor | None] = []
     for i, inp in enumerate(ins):

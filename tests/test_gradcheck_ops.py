@@ -16,7 +16,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import tensorgrad as tg
-from helpers import distinct, leaf
+from helpers import check_gradients, distinct, leaf
 from tensorgrad.nn.functional import scaled_dot_product_attention
 from tensorgrad.utils import gradcheck
 
@@ -46,7 +46,7 @@ def test_binary_ops_with_broadcasting(
     rng = np.random.default_rng(seed)
     a = leaf(rng, *shapes.input_shapes[0])
     b = leaf(rng, *shapes.input_shapes[1], positive=positive)
-    assert gradcheck(fn, [a, b])
+    assert check_gradients(fn, [a, b])
 
 
 @given(shapes=broadcast_pairs, seed=seeds)
@@ -54,26 +54,26 @@ def test_pow_tensor_exponent_with_broadcasting(shapes: hnp.BroadcastableShapes, 
     rng = np.random.default_rng(seed)
     base = leaf(rng, *shapes.input_shapes[0], positive=True)
     exponent = leaf(rng, *shapes.input_shapes[1])
-    assert gradcheck(lambda a, b: a**b, [base, exponent])
+    assert check_gradients(lambda a, b: a**b, [base, exponent])
 
 
 @pytest.mark.parametrize("exponent", [2, 3, 0.5, -1.5])
 def test_pow_scalar_exponent(rng: np.random.Generator, exponent: float) -> None:
-    assert gradcheck(lambda a: a**exponent, [leaf(rng, 3, 4, positive=True)])
+    assert check_gradients(lambda a: a**exponent, [leaf(rng, 3, 4, positive=True)])
 
 
 def test_rpow_scalar_base(rng: np.random.Generator) -> None:
-    assert gradcheck(lambda a: 2.0**a, [leaf(rng, 3, 4)])
+    assert check_gradients(lambda a: 2.0**a, [leaf(rng, 3, 4)])
 
 
 def test_scalar_operands_and_reflected_ops(rng: np.random.Generator) -> None:
     fn = lambda a: (1.0 - a) * 3.0 / (a * a + 1.0) + 2.0 / (a * a + 1.0) - (-a)
-    assert gradcheck(fn, [leaf(rng, 5)])
+    assert check_gradients(fn, [leaf(rng, 5)])
 
 
 def test_numpy_array_operands(rng: np.random.Generator) -> None:
     const = rng.standard_normal((3, 1))
-    assert gradcheck(lambda a: const * a + const - a / (const**2 + 1), [leaf(rng, 3, 4)])
+    assert check_gradients(lambda a: const * a + const - a / (const**2 + 1), [leaf(rng, 3, 4)])
 
 
 UNARY: dict[str, tuple[Callable[[tg.Tensor], tg.Tensor], dict[str, bool]]] = {
@@ -92,11 +92,11 @@ UNARY: dict[str, tuple[Callable[[tg.Tensor], tg.Tensor], dict[str, bool]]] = {
 @given(shape=small_shapes, seed=seeds)
 def test_unary_ops(name: str, shape: tuple[int, ...], seed: int) -> None:
     fn, kwargs = UNARY[name]
-    assert gradcheck(fn, [leaf(np.random.default_rng(seed), *shape, **kwargs)])
+    assert check_gradients(fn, [leaf(np.random.default_rng(seed), *shape, **kwargs)])
 
 
 def test_astype_roundtrip_gradient(rng: np.random.Generator) -> None:
-    assert gradcheck(
+    assert check_gradients(
         lambda a: a.astype(np.float32).astype(np.float64) * 2,
         [leaf(rng, 3)],
         eps=1e-3,
@@ -138,11 +138,11 @@ def test_reductions(
         fn = lambda t: t.var(axis=axis, keepdims=keepdims)
     else:
         fn = lambda t: getattr(t, name)(axis=axis, keepdims=keepdims)
-    assert gradcheck(fn, [x])
+    assert check_gradients(fn, [x])
 
 
 def test_var_population_correction(rng: np.random.Generator) -> None:
-    assert gradcheck(lambda t: t.var(axis=1, correction=0), [leaf(rng, 3, 5)])
+    assert check_gradients(lambda t: t.var(axis=1, correction=0), [leaf(rng, 3, 5)])
 
 
 def test_max_splits_gradient_between_ties() -> None:
@@ -179,17 +179,17 @@ def test_matmul(
 def test_reshape_and_permute(shape: tuple[int, ...], seed: int, data: st.DataObject) -> None:
     x = leaf(np.random.default_rng(seed), *shape)
     dims = data.draw(st.permutations(range(len(shape))))
-    assert gradcheck(lambda t: t.permute(*dims).reshape(-1) * np.arange(t.size), [x])
+    assert check_gradients(lambda t: t.permute(*dims).reshape(-1) * np.arange(t.size), [x])
 
 
 def test_transpose_flatten_squeeze_unsqueeze(rng: np.random.Generator) -> None:
     x = leaf(rng, 2, 1, 3)
-    assert gradcheck(lambda t: t.transpose(0, 2), [x])
-    assert gradcheck(lambda t: t.T, [x])
-    assert gradcheck(lambda t: t.flatten(1), [x])
-    assert gradcheck(lambda t: t.squeeze(1), [x])
-    assert gradcheck(lambda t: t.squeeze(), [x])
-    assert gradcheck(lambda t: t.unsqueeze(-1), [x])
+    assert check_gradients(lambda t: t.transpose(0, 2), [x])
+    assert check_gradients(lambda t: t.T, [x])
+    assert check_gradients(lambda t: t.flatten(1), [x])
+    assert check_gradients(lambda t: t.squeeze(1), [x])
+    assert check_gradients(lambda t: t.squeeze(), [x])
+    assert check_gradients(lambda t: t.unsqueeze(-1), [x])
 
 
 @pytest.mark.parametrize(
@@ -213,7 +213,7 @@ def test_getitem(rng: np.random.Generator, index: tuple[object, ...]) -> None:
     np.testing.assert_allclose(
         x[idx].data, x.data[idx if not isinstance(idx, list) else np.array(idx)]
     )
-    assert gradcheck(lambda t: t[idx], [x])
+    assert check_gradients(lambda t: t[idx], [x])
 
 
 def test_getitem_repeated_index_accumulates() -> None:
@@ -224,7 +224,7 @@ def test_getitem_repeated_index_accumulates() -> None:
 
 def test_getitem_with_boolean_tensor_mask(rng: np.random.Generator) -> None:
     x = leaf(rng, 3, 4)
-    assert gradcheck(lambda t: t[t > 0], [x])
+    assert check_gradients(lambda t: t[t > 0], [x])
 
 
 @given(seed=seeds, axis=st.integers(-2, 1))
@@ -234,19 +234,19 @@ def test_concat(seed: int, axis: int) -> None:
     for k, s in enumerate(shapes):
         s[axis] += k  # different sizes along the concatenation axis
     inputs = [leaf(rng, *s) for s in shapes]
-    assert gradcheck(lambda *ts: tg.concat(ts, axis=axis), inputs)
+    assert check_gradients(lambda *ts: tg.concat(ts, axis=axis), inputs)
 
 
 @given(seed=seeds, axis=st.integers(-3, 2))
 def test_stack(seed: int, axis: int) -> None:
     rng = np.random.default_rng(seed)
     inputs = [leaf(rng, 2, 3) for _ in range(3)]
-    assert gradcheck(lambda *ts: tg.stack(ts, axis=axis), inputs)
+    assert check_gradients(lambda *ts: tg.stack(ts, axis=axis), inputs)
 
 
 def test_concat_with_constant_input(rng: np.random.Generator) -> None:
     const = tg.Tensor(rng.standard_normal((2, 2)))
-    assert gradcheck(lambda t: tg.concat([const, t, const], axis=1), [leaf(rng, 2, 3)])
+    assert check_gradients(lambda t: tg.concat([const, t, const], axis=1), [leaf(rng, 2, 3)])
 
 
 @given(shapes=hnp.mutually_broadcastable_shapes(num_shapes=3, max_dims=3, max_side=3), seed=seeds)
@@ -254,13 +254,13 @@ def test_where_with_broadcasting(shapes: hnp.BroadcastableShapes, seed: int) -> 
     rng = np.random.default_rng(seed)
     cond = rng.random(shapes.input_shapes[0]) > 0.5
     a, b = leaf(rng, *shapes.input_shapes[1]), leaf(rng, *shapes.input_shapes[2])
-    assert gradcheck(lambda x, y: tg.where(cond, x, y), [a, b])
+    assert check_gradients(lambda x, y: tg.where(cond, x, y), [a, b])
 
 
 def test_masked_fill(rng: np.random.Generator) -> None:
     mask = np.triu(np.ones((4, 4), dtype=bool), k=1)
     x = leaf(rng, 2, 4, 4)
-    assert gradcheck(lambda t: t.masked_fill(mask, -3.0), [x])
+    assert check_gradients(lambda t: t.masked_fill(mask, -3.0), [x])
     out = x.masked_fill(mask, -np.inf)
     assert np.all(np.isneginf(out.data[:, mask]))
 
@@ -295,7 +295,7 @@ def test_cross_entropy_sequence_logits(rng: np.random.Generator) -> None:
 @pytest.mark.parametrize("reduction", ["mean", "sum", "none"])
 def test_mse_loss(rng: np.random.Generator, reduction: str) -> None:
     pred, target = leaf(rng, 4, 3), leaf(rng, 4, 3)
-    assert gradcheck(
+    assert check_gradients(
         lambda p, t: tg.mse_loss(p, t, reduction=reduction),
         [pred, target],
     )
@@ -362,7 +362,7 @@ def test_layer_norm(rng: np.random.Generator, affine: bool) -> None:
 def test_batch_norm_training(rng: np.random.Generator, shape: tuple[int, ...]) -> None:
     x, w, b = leaf(rng, *shape), leaf(rng, 3), leaf(rng, 3)
     fn = lambda *ts: tg.ops.batch_norm(ts[0], None, None, ts[1], ts[2], training=True)
-    assert gradcheck(fn, [x, w, b])
+    assert check_gradients(fn, [x, w, b])
 
 
 def test_dropout_with_fixed_mask(rng: np.random.Generator) -> None:

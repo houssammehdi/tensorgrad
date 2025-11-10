@@ -25,6 +25,7 @@ from tensorgrad.ops.linalg import matmul
 from tensorgrad.ops.loss import cross_entropy, mse_loss
 from tensorgrad.ops.reduce import max, mean, min, sum, var
 from tensorgrad.ops.shape import (
+    broadcast_to,
     concat,
     flatten,
     getitem,
@@ -33,6 +34,7 @@ from tensorgrad.ops.shape import (
     reshape,
     squeeze,
     stack,
+    sum_to,
     transpose,
     unsqueeze,
     where,
@@ -42,6 +44,7 @@ __all__ = [
     "add",
     "astype",
     "batch_norm",
+    "broadcast_to",
     "concat",
     "conv2d",
     "cross_entropy",
@@ -77,6 +80,7 @@ __all__ = [
     "stack",
     "sub",
     "sum",
+    "sum_to",
     "tanh",
     "transpose",
     "unsqueeze",

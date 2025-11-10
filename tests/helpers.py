@@ -1,10 +1,13 @@
-"""Helpers for building float64 test inputs."""
+"""Helpers for building float64 test inputs and checking their derivatives."""
 
 from __future__ import annotations
+
+from collections.abc import Callable, Sequence
 
 import numpy as np
 
 import tensorgrad as tg
+from tensorgrad.utils import gradcheck, gradgradcheck
 
 
 def leaf(
@@ -31,3 +34,22 @@ def distinct(rng: np.random.Generator, *shape: int) -> tg.Tensor:
     n = int(np.prod(shape))
     data = rng.permutation(n).reshape(shape) * 0.1 + rng.uniform(-0.01, 0.01, size=shape)
     return tg.Tensor(data, requires_grad=True)
+
+
+def check_gradients(
+    fn: Callable[..., tg.Tensor],
+    inputs: Sequence[tg.Tensor],
+    *,
+    eps: float = 1e-6,
+    atol: float = 1e-6,
+    rtol: float = 1e-4,
+) -> bool:
+    """First- and second-order finite-difference checks of ``fn`` at ``inputs``.
+
+    :func:`gradcheck` verifies the ordinary backward pass; :func:`gradgradcheck` verifies that
+    the ``create_graph`` VJPs agree with it and that their own derivatives (double backward,
+    with respect to the inputs and to the upstream gradient) match finite differences.
+    """
+    assert gradcheck(fn, inputs, eps=eps, atol=atol, rtol=rtol)
+    assert gradgradcheck(fn, inputs, eps=eps, atol=max(atol, 1e-5), rtol=rtol)
+    return True
