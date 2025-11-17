@@ -18,7 +18,7 @@ from hypothesis import strategies as st
 import tensorgrad as tg
 from helpers import check_gradients, distinct, leaf
 from tensorgrad.nn.functional import scaled_dot_product_attention
-from tensorgrad.utils import gradcheck
+from tensorgrad.ops.conv import conv2d_input_grad, conv2d_weight_grad
 
 seeds = st.integers(min_value=0, max_value=2**32 - 1)
 small_shapes = hnp.array_shapes(min_dims=0, max_dims=3, min_side=1, max_side=4)
@@ -321,7 +321,21 @@ def test_conv2d(
 ) -> None:
     x, w = leaf(rng, *x_shape), leaf(rng, *w_shape)
     inputs = [x, w] + ([leaf(rng, w_shape[0])] if bias else [])
-    assert gradcheck(lambda *ts: tg.conv2d(*ts, stride=stride, padding=padding), inputs)
+    assert check_gradients(lambda *ts: tg.conv2d(*ts, stride=stride, padding=padding), inputs)
+
+
+@pytest.mark.parametrize(("stride", "padding"), [(1, 0), (2, 1), ((1, 2), (1, 0))])
+def test_convolution_gradient_ops(
+    rng: np.random.Generator, stride: int | tuple[int, int], padding: int | tuple[int, int]
+) -> None:
+    # The transposed convolution and the weight-gradient correlation are ops in their own
+    # right: their VJPs are each other and conv2d, which is what makes conv2d twice (and
+    # arbitrarily often) differentiable.
+    x_shape, w_shape = (2, 3, 5, 6), (4, 3, 3, 2)
+    y = tg.conv2d(tg.Tensor(np.zeros(x_shape)), tg.Tensor(np.zeros(w_shape)), None, stride, padding)
+    g, w, x = leaf(rng, *y.shape), leaf(rng, *w_shape), leaf(rng, *x_shape)
+    assert check_gradients(lambda a, b: conv2d_input_grad(a, b, x_shape, stride, padding), [g, w])
+    assert check_gradients(lambda a, b: conv2d_weight_grad(a, b, w_shape, stride, padding), [x, g])
 
 
 @pytest.mark.parametrize(
@@ -334,28 +348,28 @@ def test_max_pool2d(
     padding: int,
 ) -> None:
     x = distinct(rng, 2, 2, 4, 5)
-    assert gradcheck(lambda t: tg.max_pool2d(t, kernel, stride, padding), [x])
+    assert check_gradients(lambda t: tg.max_pool2d(t, kernel, stride, padding), [x])
 
 
 def test_embedding_scatter_adds_repeated_ids(rng: np.random.Generator) -> None:
     weight = leaf(rng, 5, 3)
     ids = np.array([[0, 3, 3], [4, 3, 0]])
-    assert gradcheck(lambda w: tg.embedding(ids, w), [weight])
+    assert check_gradients(lambda w: tg.embedding(ids, w), [weight])
 
 
 @pytest.mark.parametrize("bias", [True, False])
 def test_linear(rng: np.random.Generator, bias: bool) -> None:
     inputs = [leaf(rng, 2, 3, 4), leaf(rng, 5, 4)] + ([leaf(rng, 5)] if bias else [])
-    assert gradcheck(lambda *ts: tg.linear(*ts), inputs)
+    assert check_gradients(lambda *ts: tg.linear(*ts), inputs)
 
 
 @pytest.mark.parametrize("affine", [True, False])
 def test_layer_norm(rng: np.random.Generator, affine: bool) -> None:
     x = leaf(rng, 2, 3, 6)
     if affine:
-        assert gradcheck(tg.layer_norm, [x, leaf(rng, 6), leaf(rng, 6)])
+        assert check_gradients(tg.layer_norm, [x, leaf(rng, 6), leaf(rng, 6)])
     else:
-        assert gradcheck(tg.layer_norm, [x])
+        assert check_gradients(tg.layer_norm, [x])
 
 
 @pytest.mark.parametrize("shape", [(6, 3), (4, 3, 5)])
@@ -369,7 +383,7 @@ def test_dropout_with_fixed_mask(rng: np.random.Generator) -> None:
     x = leaf(rng, 4, 5)
     # A fresh generator with the same seed on every call keeps the mask fixed.
     fn = lambda t: tg.dropout(t, 0.3, rng=np.random.default_rng(7))
-    assert gradcheck(fn, [x])
+    assert check_gradients(fn, [x])
 
 
 @pytest.mark.parametrize("causal", [False, True])

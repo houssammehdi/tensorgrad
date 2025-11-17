@@ -1,4 +1,18 @@
-"""2-D convolution (via im2col) and max pooling for ``(N, C, H, W)`` tensors."""
+"""2-D convolution (via im2col) and max pooling for ``(N, C, H, W)`` tensors.
+
+Higher-order derivatives of convolution come from a closure argument. Write the convolution
+as the trilinear form ``T(x, w, y) = <conv(x, w), y>``. Its three partial derivatives are
+bilinear maps implemented with the same im2col / col2im kernels:
+
+* ``dT/dy = conv2d(x, w)``            -- the forward pass,
+* ``dT/dx = conv2d_input_grad(y, w)`` -- a transposed convolution,
+* ``dT/dw = conv2d_weight_grad(x, y)`` -- the correlation of input and output gradient.
+
+Because ``T`` is linear in each argument, the VJP of each map is one of the other two (for
+example ``<conv2d_input_grad(y, w), u> = T(u, w, y)``, whose gradients are
+``conv2d(u, w)`` and ``conv2d_weight_grad(u, y)``). So every VJP below is built from these
+three ops, and derivatives of any order stay fast im2col matrix products.
+"""
 
 from __future__ import annotations
 
@@ -7,14 +21,17 @@ from numpy.lib.stride_tricks import sliding_window_view
 
 from tensorgrad._types import Array
 from tensorgrad.ops._util import as_tensor, make_result
+from tensorgrad.ops.shape import _scatter_add, reshape
 from tensorgrad.tensor import Tensor, TensorLike
 
-__all__ = ["conv2d", "im2col", "max_pool2d"]
+__all__ = ["conv2d", "conv2d_input_grad", "conv2d_weight_grad", "im2col", "max_pool2d"]
 
 IntPair = int | tuple[int, int]
+Pair = tuple[int, int]
+Need = tuple[bool, ...]
 
 
-def _pair(value: IntPair, name: str) -> tuple[int, int]:
+def _pair(value: IntPair, name: str) -> Pair:
     pair = (value, value) if isinstance(value, int) else (int(value[0]), int(value[1]))
     if len(pair) != 2:
         raise ValueError(f"{name} must be an int or a pair of ints")
@@ -30,7 +47,7 @@ def _out_size(size: int, kernel: int, stride: int, padding: int) -> int:
     return out
 
 
-def im2col(x: Array, kernel: tuple[int, int], stride: tuple[int, int]) -> Array:
+def im2col(x: Array, kernel: Pair, stride: Pair) -> Array:
     """Return every receptive field of an (already padded) ``(N, C, H, W)`` array.
 
     The result has shape ``(N, OH, OW, C, KH, KW)`` and is a strided *view* -- no data is
@@ -40,13 +57,7 @@ def im2col(x: Array, kernel: tuple[int, int], stride: tuple[int, int]) -> Array:
     return windows.transpose(0, 2, 3, 1, 4, 5)
 
 
-def _col2im_add(
-    dest: Array,
-    cols: Array,
-    kernel: tuple[int, int],
-    stride: tuple[int, int],
-    out_hw: tuple[int, int],
-) -> None:
+def _col2im_add(dest: Array, cols: Array, kernel: Pair, stride: Pair, out_hw: Pair) -> None:
     """Adjoint of :func:`im2col`: scatter-add patches ``(N, OH, OW, C, KH, KW)`` into ``dest``.
 
     Loops over the ``KH*KW`` kernel offsets only; each iteration is one vectorised strided add.
@@ -60,6 +71,57 @@ def _col2im_add(
             )
 
 
+# ------------------------------------------------------------------ array kernels
+def _patches(x: Array, kernel: Pair, stride: Pair, padding: Pair) -> Array:
+    """The ``(N*OH*OW, C*KH*KW)`` im2col patch matrix of the zero-padded input."""
+    (ph, pw), n, c = padding, x.shape[0], x.shape[1]
+    xp = np.pad(x, ((0, 0), (0, 0), (ph, ph), (pw, pw))) if ph or pw else x
+    windows = im2col(xp, kernel, stride)
+    return windows.reshape(n * windows.shape[1] * windows.shape[2], c * kernel[0] * kernel[1])
+
+
+def _output_matrix(g: Array) -> Array:
+    """``(N, C_out, OH, OW)`` output gradient as the ``(N*OH*OW, C_out)`` matrix."""
+    return g.transpose(0, 2, 3, 1).reshape(-1, g.shape[1])
+
+
+def _conv_kernel(x: Array, w: Array, stride: Pair, padding: Pair) -> tuple[Array, Array]:
+    """``conv(x, w)`` without bias, plus the patch matrix (reused by the weight gradient)."""
+    n, c_out = x.shape[0], w.shape[0]
+    oh = _out_size(x.shape[2], w.shape[2], stride[0], padding[0])
+    ow = _out_size(x.shape[3], w.shape[3], stride[1], padding[1])
+    cols = _patches(x, (w.shape[2], w.shape[3]), stride, padding)
+    out = (cols @ w.reshape(c_out, -1).T).reshape(n, oh, ow, c_out).transpose(0, 3, 1, 2)
+    return out, cols
+
+
+def _input_grad_kernel(
+    g_mat: Array, w: Array, x_shape: tuple[int, ...], out_hw: Pair, stride: Pair, padding: Pair
+) -> Array:
+    """``dT/dx``: scatter ``g_mat @ W`` (one patch per output position) back onto the input."""
+    n, c, h, width = x_shape
+    c_out, _, kh, kw = w.shape
+    (ph, pw), (oh, ow) = padding, out_hw
+    d_cols = (g_mat @ w.reshape(c_out, -1)).reshape(n, oh, ow, c, kh, kw)
+    dxp = np.zeros((n, c, h + 2 * ph, width + 2 * pw), dtype=d_cols.dtype)
+    _col2im_add(dxp, d_cols, (kh, kw), stride, out_hw)
+    return dxp[:, :, ph : ph + h, pw : pw + width]
+
+
+def _weight_grad_kernel(g_mat: Array, cols: Array, w_shape: tuple[int, ...]) -> Array:
+    """``dT/dw``: every patch weighted by the output gradient at its position, summed."""
+    return (g_mat.T @ cols).reshape(w_shape)
+
+
+def _check_conv_args(x: Tensor, w: Tensor, stride: IntPair, padding: IntPair) -> tuple[Pair, Pair]:
+    if x.ndim != 4 or w.ndim != 4:
+        raise ValueError(f"conv2d expects 4-D input and weight, got {x.shape} and {w.shape}")
+    if x.shape[1] != w.shape[1]:
+        raise ValueError(f"input has {x.shape[1]} channels but weight expects {w.shape[1]}")
+    return _pair(stride, "stride"), _pair(padding, "padding")
+
+
+# ------------------------------------------------------------------ differentiable ops
 def conv2d(
     x: TensorLike,
     weight: TensorLike,
@@ -82,41 +144,116 @@ def conv2d(
     """
     tx, tw = as_tensor(x), as_tensor(weight)
     tb = None if bias is None else as_tensor(bias)
-    if tx.ndim != 4 or tw.ndim != 4:
-        raise ValueError(f"conv2d expects 4-D input and weight, got {tx.shape} and {tw.shape}")
-    n, c, h, w = tx.shape
-    c_out, c_in, kh, kw = tw.shape
-    if c != c_in:
-        raise ValueError(f"input has {c} channels but weight expects {c_in}")
+    st, pad = _check_conv_args(tx, tw, stride, padding)
+    c_out = tw.shape[0]
     if tb is not None and tb.shape != (c_out,):
         raise ValueError(f"bias must have shape ({c_out},), got {tb.shape}")
-    (sh, sw), (ph, pw) = _pair(stride, "stride"), _pair(padding, "padding")
-    oh, ow = _out_size(h, kh, sh, ph), _out_size(w, kw, sw, pw)
-
-    xp = np.pad(tx.data, ((0, 0), (0, 0), (ph, ph), (pw, pw))) if ph or pw else tx.data
-    cols = im2col(xp, (kh, kw), (sh, sw)).reshape(n * oh * ow, c * kh * kw)
-    w_mat = tw.data.reshape(c_out, -1)
-    out = cols @ w_mat.T
+    out, cols = _conv_kernel(tx.data, tw.data, st, pad)
     if tb is not None:
-        out = out + tb.data
-    result = out.reshape(n, oh, ow, c_out).transpose(0, 3, 1, 2)
+        out = out + tb.data.reshape(1, -1, 1, 1)
 
-    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array | None, ...]:
-        g_mat = g.transpose(0, 2, 3, 1).reshape(-1, c_out)
+    def backward(g: Array, need: Need) -> tuple[Array | None, ...]:
+        g_mat = _output_matrix(g)
         gx = gw = gb = None
         if need[0]:
-            d_cols = (g_mat @ w_mat).reshape(n, oh, ow, c, kh, kw)
-            dxp = np.zeros(xp.shape, dtype=g.dtype)
-            _col2im_add(dxp, d_cols, (kh, kw), (sh, sw), (oh, ow))
-            gx = dxp[:, :, ph : ph + h, pw : pw + w]
+            gx = _input_grad_kernel(g_mat, tw.data, tx.shape, g.shape[2:], st, pad)
         if need[1]:
-            gw = (g_mat.T @ cols).reshape(tw.shape)
+            gw = _weight_grad_kernel(g_mat, cols, tw.shape)
         if tb is not None and need[2]:
             gb = g_mat.sum(axis=0)
         return (gx, gw) if tb is None else (gx, gw, gb)
 
+    def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor | None, ...]:
+        gx = conv2d_input_grad(g, tw, tx.shape, st, pad) if need[0] else None
+        gw = conv2d_weight_grad(tx, g, tw.shape, st, pad) if need[1] else None
+        gb = g.sum(axis=(0, 2, 3)) if tb is not None and need[2] else None
+        return (gx, gw) if tb is None else (gx, gw, gb)
+
     parents = (tx, tw) if tb is None else (tx, tw, tb)
-    return make_result(result, parents, backward, "conv2d")
+    return make_result(out, parents, backward, "conv2d", graph=graph)
+
+
+def conv2d_input_grad(
+    grad_output: TensorLike,
+    weight: TensorLike,
+    input_shape: tuple[int, ...],
+    stride: IntPair = 1,
+    padding: IntPair = 0,
+) -> Tensor:
+    """Gradient of ``conv2d(x, weight)`` with respect to ``x`` (a transposed convolution).
+
+    Maps a ``(N, C_out, OH, OW)`` output gradient to an input-shaped ``(N, C_in, H, W)``
+    tensor. It is differentiable itself (see the module docstring).
+    """
+    tg_, tw = as_tensor(grad_output), as_tensor(weight)
+    st, pad = _pair(stride, "stride"), _pair(padding, "padding")
+    out_hw = (tg_.shape[2], tg_.shape[3])
+    out = _input_grad_kernel(_output_matrix(tg_.data), tw.data, input_shape, out_hw, st, pad)
+
+    def backward(u: Array, need: Need) -> tuple[Array | None, Array | None]:
+        g_u = w_u = None
+        if need[0]:  # d/dy T(u, w, y) = conv(u, w)
+            g_u = _conv_kernel(u, tw.data, st, pad)[0]
+        if need[1]:  # d/dw T(u, w, y) = weight gradient of (u, y)
+            patches = _patches(u, (tw.shape[2], tw.shape[3]), st, pad)
+            w_u = _weight_grad_kernel(_output_matrix(tg_.data), patches, tw.shape)
+        return g_u, w_u
+
+    def graph(u: Tensor, y: Tensor, need: Need) -> tuple[Tensor | None, Tensor | None]:
+        return (
+            conv2d(u, tw, stride=st, padding=pad) if need[0] else None,
+            conv2d_weight_grad(u, tg_, tw.shape, st, pad) if need[1] else None,
+        )
+
+    return make_result(out, (tg_, tw), backward, "conv2d_input_grad", graph=graph)
+
+
+def conv2d_weight_grad(
+    x: TensorLike,
+    grad_output: TensorLike,
+    weight_shape: tuple[int, ...],
+    stride: IntPair = 1,
+    padding: IntPair = 0,
+) -> Tensor:
+    """Gradient of ``conv2d(x, w)`` with respect to ``w``, for an output gradient.
+
+    Returns a ``weight_shape`` tensor. It is differentiable itself (see the module docstring).
+    """
+    tx, tg_ = as_tensor(x), as_tensor(grad_output)
+    st, pad = _pair(stride, "stride"), _pair(padding, "padding")
+    kernel = (weight_shape[2], weight_shape[3])
+    out = _weight_grad_kernel(
+        _output_matrix(tg_.data), _patches(tx.data, kernel, st, pad), weight_shape
+    )
+
+    def backward(m: Array, need: Need) -> tuple[Array | None, Array | None]:
+        x_m = g_m = None
+        if need[0]:  # d/dx T(x, m, y) = input gradient of (y, m)
+            out_hw = (tg_.shape[2], tg_.shape[3])
+            x_m = _input_grad_kernel(_output_matrix(tg_.data), m, tx.shape, out_hw, st, pad)
+        if need[1]:  # d/dy T(x, m, y) = conv(x, m)
+            g_m = _conv_kernel(tx.data, m, st, pad)[0]
+        return x_m, g_m
+
+    def graph(m: Tensor, y: Tensor, need: Need) -> tuple[Tensor | None, Tensor | None]:
+        return (
+            conv2d_input_grad(tg_, m, tx.shape, st, pad) if need[0] else None,
+            conv2d(tx, m, stride=st, padding=pad) if need[1] else None,
+        )
+
+    return make_result(out, (tx, tg_), backward, "conv2d_weight_grad", graph=graph)
+
+
+def _winner_positions(winner: Array, kw: int, stride: Pair, padded: tuple[int, ...]) -> Array:
+    """Flat index into the padded input of every window's maximum."""
+    n, c, oh, ow = winner.shape
+    hp, wp = padded[2], padded[3]
+    ki, kj = np.divmod(winner, kw)
+    rows = np.arange(oh).reshape(1, 1, oh, 1) * stride[0] + ki
+    cols = np.arange(ow).reshape(1, 1, 1, ow) * stride[1] + kj
+    planes = np.arange(n * c).reshape(n, c, 1, 1) * (hp * wp)
+    positions: Array = planes + rows * wp + cols
+    return positions
 
 
 def max_pool2d(
@@ -152,7 +289,7 @@ def max_pool2d(
     winner = np.argmax(flat, axis=-1)
     out = np.take_along_axis(flat, winner[..., None], axis=-1)[..., 0]
 
-    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
+    def backward(g: Array, need: Need) -> tuple[Array]:
         dxp = np.zeros(xp.shape, dtype=g.dtype)
         for i in range(kh):
             for j in range(kw):
@@ -160,4 +297,11 @@ def max_pool2d(
                 dxp[:, :, i : i + sh * oh : sh, j : j + sw * ow : sw] += g * hit
         return (dxp[:, :, ph : ph + h, pw : pw + w],)
 
-    return make_result(out, (tx,), backward, "max_pool2d")
+    def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor]:
+        # Pooling selects fixed positions (a.e.), so its VJP is a scatter-add of g into
+        # them -- a linear op whose own VJP is the matching gather.
+        positions = _winner_positions(winner, kw, (sh, sw), xp.shape)
+        dxp = _scatter_add(reshape(g, (-1,)), (positions.reshape(-1),), True, (xp.size,))
+        return (reshape(dxp, xp.shape)[:, :, ph : ph + h, pw : pw + w],)
+
+    return make_result(out, (tx,), backward, "max_pool2d", graph=graph)

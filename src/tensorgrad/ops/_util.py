@@ -31,7 +31,7 @@ def make_result(
     backward: BackwardFn,
     op: str,
     *,
-    graph: GraphBackwardFn | None = None,
+    graph: GraphBackwardFn,
 ) -> Tensor:
     """Wrap an op's output, recording a graph node if any input requires grad.
 

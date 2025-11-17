@@ -9,9 +9,13 @@ from tensorgrad._types import Array
 from tensorgrad.autograd import no_grad
 from tensorgrad.ops import elementwise, reduce
 from tensorgrad.ops._util import as_tensor, make_result
+from tensorgrad.ops.linalg import matmul
+from tensorgrad.ops.shape import _scatter_add, reshape, transpose
 from tensorgrad.tensor import Tensor, TensorLike
 
 __all__ = ["batch_norm", "dropout", "embedding", "layer_norm", "linear"]
+
+Need = tuple[bool, ...]
 
 
 def linear(x: TensorLike, weight: TensorLike, bias: TensorLike | None = None) -> Tensor:
@@ -27,7 +31,7 @@ def linear(x: TensorLike, weight: TensorLike, bias: TensorLike | None = None) ->
     if tb is not None:
         out = out + tb.data
 
-    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array | None, ...]:
+    def backward(g: Array, need: Need) -> tuple[Array | None, ...]:
         g2 = g.reshape(-1, g.shape[-1])
         gx = (g @ tw.data) if need[0] else None
         gw = (g2.T @ tx.data.reshape(-1, tx.shape[-1])) if need[1] else None
@@ -35,8 +39,18 @@ def linear(x: TensorLike, weight: TensorLike, bias: TensorLike | None = None) ->
             return gx, gw
         return gx, gw, (g2.sum(axis=0) if need[2] else None)
 
+    def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor | None, ...]:
+        g2 = reshape(g, (-1, g.shape[-1]))
+        gx = matmul(g, tw) if need[0] else None
+        gw = None
+        if need[1]:
+            gw = matmul(transpose(g2, 0, 1), reshape(tx, (-1, tx.shape[-1])))
+        if tb is None:
+            return gx, gw
+        return gx, gw, (g2.sum(axis=0) if need[2] else None)
+
     parents = (tx, tw) if tb is None else (tx, tw, tb)
-    return make_result(out, parents, backward, "linear")
+    return make_result(out, parents, backward, "linear", graph=graph)
 
 
 def layer_norm(
@@ -63,7 +77,7 @@ def layer_norm(
         out = out + tb.data
     lead = tuple(range(tx.ndim - 1))
 
-    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array | None, ...]:
+    def backward(g: Array, need: Need) -> tuple[Array | None, ...]:
         grads: list[Array | None] = []
         if need[0]:
             gh = g if tw is None else g * tw.data
@@ -80,8 +94,30 @@ def layer_norm(
             grads.append(g.sum(axis=lead) if need[k] else None)
         return tuple(grads)
 
+    def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor | None, ...]:
+        # The fused formula again, with the statistics recomputed as differentiable ops.
+        c = tx - tx.mean(axis=-1, keepdims=True)
+        r = ((c * c).mean(axis=-1, keepdims=True) + eps) ** -0.5
+        xh = c * r
+        grads: list[Tensor | None] = []
+        if need[0]:
+            gh = g if tw is None else g * tw
+            mean_gh = gh.mean(axis=-1, keepdims=True)
+            mean_ghx = (gh * xh).mean(axis=-1, keepdims=True)
+            grads.append(r * (gh - mean_gh - xh * mean_ghx))
+        else:
+            grads.append(None)
+        k = 1
+        if tw is not None:
+            grads.append((g * xh).sum(axis=lead) if need[k] else None)
+            k += 1
+        if tb is not None:
+            grads.append(g.sum(axis=lead) if need[k] else None)
+        return tuple(grads)
+
     parents = tuple(t for t in (tx, tw, tb) if t is not None)
-    return make_result(out.astype(tx.dtype, copy=False), parents, backward, "layer_norm")
+    result = out.astype(tx.dtype, copy=False)
+    return make_result(result, parents, backward, "layer_norm", graph=graph)
 
 
 def batch_norm(
@@ -146,12 +182,15 @@ def embedding(indices: Tensor | Array, weight: TensorLike) -> Tensor:
         )
     out = tw.data[idx]
 
-    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
+    def backward(g: Array, need: Need) -> tuple[Array]:
         grad = np.zeros_like(tw.data)
         np.add.at(grad, idx.reshape(-1), g.reshape(-1, tw.shape[1]))
         return (grad,)
 
-    return make_result(out, (tw,), backward, "embedding")
+    def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor]:
+        return (_scatter_add(g, (idx,), True, tw.shape),)
+
+    return make_result(out, (tw,), backward, "embedding", graph=graph)
 
 
 def dropout(
@@ -171,7 +210,10 @@ def dropout(
         keep = (rng or get_rng()).random(tx.shape, dtype=np.float32) >= p
         mask = keep.astype(tx.dtype) / np.asarray(1.0 - p, dtype=tx.dtype)
 
-    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
+    def backward(g: Array, need: Need) -> tuple[Array]:
         return (g * mask,)
 
-    return make_result(tx.data * mask, (tx,), backward, "dropout")
+    def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor]:
+        return (g * mask,)
+
+    return make_result(tx.data * mask, (tx,), backward, "dropout", graph=graph)

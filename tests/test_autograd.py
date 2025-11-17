@@ -268,7 +268,11 @@ def recording_op(a: tg.Tensor, b: tg.Tensor, log: list[tuple[bool, ...]]) -> tg.
         log.append(need)
         return (g * b.data if need[0] else None, g * a.data if need[1] else None)
 
-    return make_result(a.data * b.data, (a, b), backward, "recording_mul")
+    def graph(g: tg.Tensor, out: tg.Tensor, need: tuple[bool, ...]) -> tuple[tg.Tensor | None, ...]:
+        log.append(need)
+        return (g * b if need[0] else None, g * a if need[1] else None)
+
+    return make_result(a.data * b.data, (a, b), backward, "recording_mul", graph=graph)
 
 
 class TestFunctionalGrad:
@@ -387,7 +391,13 @@ class TestGradcheckUtility:
 
         def bad_square(a: tg.Tensor) -> tg.Tensor:
             t = as_tensor(a)
-            return make_result(t.data**2, (t,), lambda g, need: (g * t.data,), "bad_square")
+            return make_result(
+                t.data**2,
+                (t,),
+                lambda g, need: (g * t.data,),  # wrong: should be 2 * t
+                "bad_square",
+                graph=lambda g, out, need: (g * t,),
+            )
 
         x = tg.Tensor(np.random.default_rng(0).standard_normal(4), requires_grad=True)
         with pytest.raises(GradcheckError, match="mismatch"):

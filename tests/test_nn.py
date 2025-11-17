@@ -7,7 +7,7 @@ import pytest
 
 import tensorgrad as tg
 from tensorgrad import nn
-from tensorgrad.utils import gradcheck
+from tensorgrad.utils import gradcheck, gradgradcheck
 
 
 @pytest.fixture
@@ -191,6 +191,8 @@ class TestLayers:
         mlp = nn.MLP([3, 4, 2], activation="tanh")
         x = tg.randn((5, 3))
         assert gradcheck(lambda *_: mlp(x), list(mlp.parameters()))
+        # Second derivatives with respect to every weight (Hessian-vector products of a net).
+        assert gradgradcheck(lambda *_: mlp(x), list(mlp.parameters()))
 
 
 class TestAttention:
@@ -248,6 +250,11 @@ class TestAttention:
         x = tg.randn((2, 3, 8))
         params = list(block.parameters())
         assert gradcheck(lambda *_: block(x), [*params, x.requires_grad_()])
+        # Second order through attention, softmax, GELU, LayerNorm and residuals, with
+        # respect to the input (every parameter would take far longer to finite-difference).
+        for p in params:
+            p.requires_grad_(False)
+        assert gradgradcheck(lambda t: block(t), [x])
 
 
 class TestGPT:

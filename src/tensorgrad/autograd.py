@@ -130,12 +130,12 @@ class Node:
         op: str,
         parents: tuple[Tensor, ...],
         backward: BackwardFn,
-        graph_backward: GraphBackwardFn | None = None,
+        graph_backward: GraphBackwardFn,
     ) -> None:
         self.op = op
         self.parents = parents
         self._backward: BackwardFn | None = backward
-        self._graph_backward = graph_backward
+        self._graph_backward: GraphBackwardFn | None = graph_backward
 
     @property
     def released(self) -> bool:
@@ -162,8 +162,7 @@ class Node:
     ) -> tuple[Tensor | None, ...]:
         """Differentiable version of :meth:`apply`: the returned gradients carry a graph."""
         self.check_alive()
-        if self._graph_backward is None:
-            raise NotImplementedError(f"op '{self.op}' does not support create_graph=True")
+        assert self._graph_backward is not None
         return self._graph_backward(grad, output, need)
 
     def release(self) -> None:
