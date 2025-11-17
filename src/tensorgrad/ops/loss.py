@@ -9,7 +9,8 @@ import numpy as np
 from tensorgrad._types import Array
 from tensorgrad.ops import reduce
 from tensorgrad.ops._util import as_tensor, coerce_pair, make_result
-from tensorgrad.ops.activation import _log_softmax_array
+from tensorgrad.ops.activation import _log_softmax_array, softmax
+from tensorgrad.ops.shape import reshape
 from tensorgrad.tensor import Tensor, TensorLike
 
 __all__ = ["Reduction", "cross_entropy", "mse_loss"]
@@ -75,7 +76,22 @@ def cross_entropy(
             grad *= g
         return (grad.reshape(tl.shape).astype(tl.dtype, copy=False),)
 
-    return make_result(out, (tl,), backward, "cross_entropy")
+    def graph(g: Tensor, y: Tensor, need: tuple[bool, ...]) -> tuple[Tensor]:
+        # The same fused gradient, with softmax(logits) recomputed as a differentiable op
+        # (the Hessian of cross-entropy is diag(p) - p p^T per row).
+        onehot = np.zeros((rows.size, num_classes), dtype=tl.dtype)
+        onehot[rows, safe_t] = 1
+        weight = valid[:, None].astype(tl.dtype)
+        grad = (softmax(reshape(tl, (-1, num_classes)), axis=1) - onehot) * weight
+        if reduction == "none":
+            grad = grad * reshape(g, (-1, 1))
+        elif reduction == "mean":
+            grad = grad * (g / max(n_valid, 1))
+        else:
+            grad = grad * g
+        return (reshape(grad, tl.shape),)
+
+    return make_result(out, (tl,), backward, "cross_entropy", graph=graph)
 
 
 def mse_loss(

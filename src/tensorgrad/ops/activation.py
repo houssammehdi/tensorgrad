@@ -6,9 +6,13 @@ import numpy as np
 
 from tensorgrad._types import Array
 from tensorgrad.ops._util import as_tensor, make_result, normalize_axis
+from tensorgrad.ops.elementwise import exp
+from tensorgrad.ops.shape import unsqueeze
 from tensorgrad.tensor import Tensor, TensorLike
 
 __all__ = ["log_softmax", "logsumexp", "softmax"]
+
+Need = tuple[bool, ...]
 
 
 def _shifted(x: Array, axis: int) -> Array:
@@ -30,10 +34,13 @@ def softmax(a: TensorLike, axis: int = -1) -> Tensor:
     e = np.exp(_shifted(ta.data, ax))
     s = e / np.sum(e, axis=ax, keepdims=True)
 
-    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
+    def backward(g: Array, need: Need) -> tuple[Array]:
         return (s * (g - np.sum(g * s, axis=ax, keepdims=True)),)
 
-    return make_result(s, (ta,), backward, "softmax")
+    def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor]:
+        return (y * (g - (g * y).sum(axis=ax, keepdims=True)),)
+
+    return make_result(s, (ta,), backward, "softmax", graph=graph)
 
 
 def _log_softmax_array(x: Array, axis: int) -> Array:
@@ -53,10 +60,13 @@ def log_softmax(a: TensorLike, axis: int = -1) -> Tensor:
     ax = normalize_axis(axis, ta.ndim)
     out = _log_softmax_array(ta.data, ax)
 
-    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
+    def backward(g: Array, need: Need) -> tuple[Array]:
         return (g - np.exp(out) * np.sum(g, axis=ax, keepdims=True),)
 
-    return make_result(out, (ta,), backward, "log_softmax")
+    def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor]:
+        return (g - exp(y) * g.sum(axis=ax, keepdims=True),)
+
+    return make_result(out, (ta,), backward, "log_softmax", graph=graph)
 
 
 def logsumexp(a: TensorLike, axis: int = -1, keepdims: bool = False) -> Tensor:
@@ -68,8 +78,12 @@ def logsumexp(a: TensorLike, axis: int = -1, keepdims: bool = False) -> Tensor:
     kept = np.log(np.sum(np.exp(ta.data - m), axis=ax, keepdims=True)) + m
     out = kept if keepdims else np.squeeze(kept, axis=ax)
 
-    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array]:
+    def backward(g: Array, need: Need) -> tuple[Array]:
         g_kept = g if keepdims else np.expand_dims(g, ax)
         return (g_kept * np.exp(ta.data - kept),)
 
-    return make_result(out, (ta,), backward, "logsumexp")
+    def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor]:
+        g_kept = g if keepdims else unsqueeze(g, ax)
+        return (g_kept * softmax(ta, ax),)
+
+    return make_result(out, (ta,), backward, "logsumexp", graph=graph)

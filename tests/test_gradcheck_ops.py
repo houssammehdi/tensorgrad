@@ -171,7 +171,7 @@ def test_matmul(
 ) -> None:
     a, b = leaf(rng, *shape_a), leaf(rng, *shape_b)
     np.testing.assert_allclose((a @ b).data, a.data @ b.data)
-    assert gradcheck(lambda x, y: x @ y, [a, b])
+    assert check_gradients(lambda x, y: x @ y, [a, b])
 
 
 # --------------------------------------------------------------------------- shape ops
@@ -270,17 +270,17 @@ def test_masked_fill(rng: np.random.Generator) -> None:
 def test_softmax_family(shape: tuple[int, ...], seed: int, data: st.DataObject) -> None:
     axis = data.draw(st.integers(-len(shape), len(shape) - 1))
     x = leaf(np.random.default_rng(seed), *shape)
-    assert gradcheck(lambda t: tg.softmax(t, axis=axis), [x])
-    assert gradcheck(lambda t: tg.log_softmax(t, axis=axis), [x])
-    assert gradcheck(lambda t: tg.logsumexp(t, axis=axis), [x])
-    assert gradcheck(lambda t: tg.logsumexp(t, axis=axis, keepdims=True), [x])
+    assert check_gradients(lambda t: tg.softmax(t, axis=axis), [x])
+    assert check_gradients(lambda t: tg.log_softmax(t, axis=axis), [x])
+    assert check_gradients(lambda t: tg.logsumexp(t, axis=axis), [x])
+    assert check_gradients(lambda t: tg.logsumexp(t, axis=axis, keepdims=True), [x])
 
 
 @pytest.mark.parametrize("reduction", ["mean", "sum", "none"])
 def test_cross_entropy(rng: np.random.Generator, reduction: str) -> None:
     logits = leaf(rng, 6, 5)
     target = np.array([0, 4, -100, 2, 2, -100])
-    assert gradcheck(
+    assert check_gradients(
         lambda t: tg.cross_entropy(t, target, reduction=reduction),
         [logits],
     )
@@ -289,7 +289,7 @@ def test_cross_entropy(rng: np.random.Generator, reduction: str) -> None:
 def test_cross_entropy_sequence_logits(rng: np.random.Generator) -> None:
     logits = leaf(rng, 2, 3, 7)  # (batch, time, vocab)
     target = rng.integers(0, 7, size=(2, 3))
-    assert gradcheck(lambda t: tg.cross_entropy(t, target), [logits])
+    assert check_gradients(lambda t: tg.cross_entropy(t, target), [logits])
 
 
 @pytest.mark.parametrize("reduction", ["mean", "sum", "none"])
@@ -376,4 +376,4 @@ def test_dropout_with_fixed_mask(rng: np.random.Generator) -> None:
 def test_scaled_dot_product_attention(rng: np.random.Generator, causal: bool) -> None:
     q, k, v = leaf(rng, 2, 4, 3), leaf(rng, 2, 4, 3), leaf(rng, 2, 4, 2)
     fn = lambda *ts: scaled_dot_product_attention(*ts, causal=causal)
-    assert gradcheck(fn, [q, k, v])
+    assert check_gradients(fn, [q, k, v])

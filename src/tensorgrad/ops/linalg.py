@@ -6,6 +6,7 @@ import numpy as np
 
 from tensorgrad._types import Array
 from tensorgrad.ops._util import coerce_pair, make_result, unbroadcast
+from tensorgrad.ops.shape import reshape, sum_to, transpose
 from tensorgrad.tensor import Tensor, TensorLike
 
 __all__ = ["matmul"]
@@ -41,4 +42,20 @@ def matmul(a: TensorLike, b: TensorLike) -> Tensor:
             gb = unbroadcast(np.swapaxes(a2, -1, -2) @ g2, b2.shape).reshape(tb.shape)
         return ga, gb
 
-    return make_result(np.asarray(out), (ta, tb), backward, "matmul")
+    def graph(g: Tensor, y: Tensor, need: tuple[bool, ...]) -> tuple[Tensor | None, Tensor | None]:
+        # The same algebra with tensors: dA = dY B^T and dB = A^T dY are matmuls again.
+        at = ta if ta.ndim > 1 else reshape(ta, (1, ta.shape[0]))
+        bt = tb if tb.ndim > 1 else reshape(tb, (tb.shape[0], 1))
+        g2 = g
+        if tb.ndim == 1:
+            g2 = reshape(g2, (*g2.shape, 1))
+        if ta.ndim == 1:
+            g2 = reshape(g2, (*g2.shape[:-1], 1, g2.shape[-1]))
+        ga = gb = None
+        if need[0]:
+            ga = reshape(sum_to(matmul(g2, transpose(bt, -1, -2)), at.shape), ta.shape)
+        if need[1]:
+            gb = reshape(sum_to(matmul(transpose(at, -1, -2), g2), bt.shape), tb.shape)
+        return ga, gb
+
+    return make_result(np.asarray(out), (ta, tb), backward, "matmul", graph=graph)
