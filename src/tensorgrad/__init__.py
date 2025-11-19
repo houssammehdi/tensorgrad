@@ -1,11 +1,14 @@
 """tensorgrad: a from-scratch deep-learning framework on top of NumPy.
 
 The top-level namespace holds the :class:`Tensor` type, grad-mode switches, tensor factories
-and every differentiable op; neural-network layers live in :mod:`tensorgrad.nn`, optimisers
-in :mod:`tensorgrad.optim` and gradient checking / data loading / checkpoints in
+and every differentiable op. :mod:`tensorgrad.autograd` exposes the engine (``grad``,
+``backward``), :mod:`tensorgrad.func` the function transforms (``grad``, ``vjp``, ``jvp``,
+``jacobian``, ``hessian``, ``hvp``); neural-network layers live in :mod:`tensorgrad.nn`,
+optimisers in :mod:`tensorgrad.optim` and gradient checking / data loading / checkpoints in
 :mod:`tensorgrad.utils`.
 """
 
+from tensorgrad import autograd, func
 from tensorgrad._random import get_rng, manual_seed
 from tensorgrad.autograd import enable_grad, is_grad_enabled, no_grad
 from tensorgrad.ops import (
@@ -73,6 +76,7 @@ __all__ = [
     "__version__",
     "add",
     "arange",
+    "autograd",
     "broadcast_to",
     "concat",
     "conv2d",
@@ -84,6 +88,7 @@ __all__ = [
     "exp",
     "flatten",
     "full",
+    "func",
     "gelu",
     "get_default_dtype",
     "get_rng",
