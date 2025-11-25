@@ -204,6 +204,13 @@ class Tensor:
             create_graph: Record the backward pass too, so every ``.grad`` it produces is
                 a tensor with its own graph that can be differentiated again.
         """
+        if grad is None and not create_graph and self._requires_grad and self.data.size == 1:
+            # ``loss.backward()``: skip the general argument handling of autograd.backward.
+            seed = np.ones_like(self.data)
+            _autograd._run_backward(
+                (self,), (seed,), retain_graph=bool(retain_graph), create_graph=False, targets=None
+            )
+            return
         _autograd.backward(self, grad, retain_graph=retain_graph, create_graph=create_graph)
 
     def _accumulate_grad(self, g: Array | Tensor) -> None:

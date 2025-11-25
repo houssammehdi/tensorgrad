@@ -145,11 +145,14 @@ class Node:
     def check_alive(self) -> None:
         """Raise if a backward pass without ``retain_graph`` already freed this node."""
         if self._backward is None:
-            raise RuntimeError(
-                f"Trying to backward through the graph a second time (op '{self.op}'); "
-                "the saved intermediate values were freed. Pass retain_graph=True to the "
-                "first backward() call if you need to backpropagate through it again."
-            )
+            raise self._freed_error()
+
+    def _freed_error(self) -> RuntimeError:
+        return RuntimeError(
+            f"Trying to backward through the graph a second time (op '{self.op}'); "
+            "the saved intermediate values were freed. Pass retain_graph=True to the "
+            "first backward() call if you need to backpropagate through it again."
+        )
 
     def apply(self, grad: Array, need: tuple[bool, ...]) -> tuple[Array | None, ...]:
         """Map the output gradient to one gradient (or ``None``) per parent."""
@@ -257,12 +260,15 @@ def _run_backward(
                 tensor._accumulate_grad(g)
             if node is None:
                 continue
-            node.check_alive()  # a freed node has no parents left: fail loudly, not silently
+            backward_fn = node._backward
+            if backward_fn is None:  # freed: it has no parents left, so fail loudly
+                raise node._freed_error()
             parents = node.parents
+            # List comprehensions over the slot: this loop is the hot path of every step.
             if live is None:
-                need = tuple(p.requires_grad for p in parents)
+                need = tuple([p._requires_grad for p in parents])
             else:
-                need = tuple(p.requires_grad and id(p) in live for p in parents)
+                need = tuple([p._requires_grad and id(p) in live for p in parents])
             if not any(need):
                 continue
             if create_graph:
@@ -272,7 +278,7 @@ def _run_backward(
                     need,
                 )
             else:
-                parent_grads = node.apply(g, need)  # type: ignore[arg-type]
+                parent_grads = backward_fn(g, need)  # type: ignore[arg-type]
             if len(parent_grads) != len(parents):
                 raise RuntimeError(
                     f"op '{node.op}' returned {len(parent_grads)} gradients "
