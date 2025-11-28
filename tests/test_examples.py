@@ -59,6 +59,15 @@ def test_newton_example_converges_in_a_few_iterations() -> None:
     assert int(newton_line.split()[3]) <= 10  # quadratic convergence from w = 0
 
 
+def test_maml_example_runs_all_three_methods() -> None:
+    out = run_example(
+        "maml_sinusoid.py", "--iterations", "3", "--meta-batch", "4", "--test-tasks", "8",
+        "--no-plot",
+    )  # fmt: skip
+    for method in ("MAML", "first-order MAML", "pretrained"):
+        assert any(line.startswith(method + " ") for line in out.splitlines()), method
+
+
 @pytest.mark.parametrize("script", ["spiral_mlp.py", "shapes_cnn.py", "char_gpt.py"])
 def test_examples_expose_epochs_or_steps_and_seed(script: str) -> None:
     help_text = run_example(script, "--help")
