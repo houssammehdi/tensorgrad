@@ -53,6 +53,12 @@ def test_char_gpt_example_with_checkpoint(tmp_path: Path) -> None:
     assert "step     2" in resumed
 
 
+def test_newton_example_converges_in_a_few_iterations() -> None:
+    out = run_example("newton_logreg.py", "--samples", "400", "--gd-steps", "20", "--no-plot")
+    newton_line = next(line for line in out.splitlines() if line.startswith("Newton, exact"))
+    assert int(newton_line.split()[3]) <= 10  # quadratic convergence from w = 0
+
+
 @pytest.mark.parametrize("script", ["spiral_mlp.py", "shapes_cnn.py", "char_gpt.py"])
 def test_examples_expose_epochs_or_steps_and_seed(script: str) -> None:
     help_text = run_example(script, "--help")
