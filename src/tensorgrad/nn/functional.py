@@ -3,6 +3,7 @@
 from tensorgrad.nn.attention import scaled_dot_product_attention
 from tensorgrad.ops import (
     batch_norm,
+    binary_cross_entropy_with_logits,
     conv2d,
     cross_entropy,
     dropout,
@@ -21,6 +22,7 @@ from tensorgrad.ops import (
 
 __all__ = [
     "batch_norm",
+    "binary_cross_entropy_with_logits",
     "conv2d",
     "cross_entropy",
     "dropout",

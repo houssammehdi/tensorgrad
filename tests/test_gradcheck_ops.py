@@ -293,6 +293,16 @@ def test_cross_entropy_sequence_logits(rng: np.random.Generator) -> None:
 
 
 @pytest.mark.parametrize("reduction", ["mean", "sum", "none"])
+def test_binary_cross_entropy_with_logits(rng: np.random.Generator, reduction: str) -> None:
+    logits, soft_targets = leaf(rng, 4, 3), leaf(rng, 4, 3)
+    soft_targets.data[...] = 1 / (1 + np.exp(-soft_targets.data))  # probabilities in (0, 1)
+    assert check_gradients(
+        lambda z, y: tg.binary_cross_entropy_with_logits(z, y, reduction=reduction),
+        [logits, soft_targets],
+    )
+
+
+@pytest.mark.parametrize("reduction", ["mean", "sum", "none"])
 def test_mse_loss(rng: np.random.Generator, reduction: str) -> None:
     pred, target = leaf(rng, 4, 3), leaf(rng, 4, 3)
     assert check_gradients(

@@ -147,6 +147,28 @@ def test_cross_entropy_of_confident_correct_logits_is_small() -> None:
     assert tg.cross_entropy(logits, np.array([0])).item() < 1e-12
 
 
+def test_binary_cross_entropy_matches_the_definition_and_is_stable() -> None:
+    z = np.array([-3.0, -0.5, 0.0, 1.5, 4.0])
+    y = np.array([0.0, 1.0, 0.3, 1.0, 0.0])
+    p = 1 / (1 + np.exp(-z))
+    expected = -(y * np.log(p) + (1 - y) * np.log(1 - p))
+    got = tg.binary_cross_entropy_with_logits(tg.Tensor(z), y, reduction="none")
+    np.testing.assert_allclose(got.data, expected, rtol=1e-12)
+    assert tg.binary_cross_entropy_with_logits(tg.Tensor(z), y).item() == pytest.approx(
+        expected.mean()
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # no overflow in exp or log(0)
+        extreme = tg.Tensor(np.array([-1000.0, 1000.0]), requires_grad=True)
+        loss = tg.binary_cross_entropy_with_logits(extreme, np.array([1.0, 0.0]), reduction="sum")
+        loss.backward()
+    assert loss.item() == pytest.approx(2000.0)
+    assert extreme.grad is not None
+    np.testing.assert_allclose(extreme.grad.data, [-1.0, 1.0])
+    with pytest.raises(ValueError, match="same shape"):
+        tg.binary_cross_entropy_with_logits(tg.Tensor(z), np.zeros(3))
+
+
 def test_sigmoid_is_stable_and_symmetric() -> None:
     x = np.array([-1000.0, -5.0, 0.0, 5.0, 1000.0])
     with warnings.catch_warnings():

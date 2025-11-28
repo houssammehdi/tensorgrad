@@ -22,7 +22,7 @@ from tensorgrad.ops.elementwise import (
 )
 from tensorgrad.ops.layers import batch_norm, dropout, embedding, layer_norm, linear
 from tensorgrad.ops.linalg import matmul
-from tensorgrad.ops.loss import cross_entropy, mse_loss
+from tensorgrad.ops.loss import binary_cross_entropy_with_logits, cross_entropy, mse_loss
 from tensorgrad.ops.reduce import max, mean, min, sum, var
 from tensorgrad.ops.shape import (
     broadcast_to,
@@ -44,6 +44,7 @@ __all__ = [
     "add",
     "astype",
     "batch_norm",
+    "binary_cross_entropy_with_logits",
     "broadcast_to",
     "concat",
     "conv2d",

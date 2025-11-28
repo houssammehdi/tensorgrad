@@ -13,6 +13,7 @@ from tensorgrad._random import get_rng, manual_seed
 from tensorgrad.autograd import enable_grad, is_grad_enabled, no_grad
 from tensorgrad.ops import (
     add,
+    binary_cross_entropy_with_logits,
     broadcast_to,
     concat,
     conv2d,
@@ -77,6 +78,7 @@ __all__ = [
     "add",
     "arange",
     "autograd",
+    "binary_cross_entropy_with_logits",
     "broadcast_to",
     "concat",
     "conv2d",

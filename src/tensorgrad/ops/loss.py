@@ -10,10 +10,11 @@ from tensorgrad._types import Array
 from tensorgrad.ops import reduce
 from tensorgrad.ops._util import as_tensor, coerce_pair, make_result
 from tensorgrad.ops.activation import _log_softmax_array, softmax
-from tensorgrad.ops.shape import reshape
+from tensorgrad.ops.elementwise import sigmoid
+from tensorgrad.ops.shape import broadcast_to, reshape
 from tensorgrad.tensor import Tensor, TensorLike
 
-__all__ = ["Reduction", "cross_entropy", "mse_loss"]
+__all__ = ["Reduction", "binary_cross_entropy_with_logits", "cross_entropy", "mse_loss"]
 
 Reduction = Literal["mean", "sum", "none"]
 
@@ -92,6 +93,53 @@ def cross_entropy(
         return (reshape(grad, tl.shape),)
 
     return make_result(out, (tl,), backward, "cross_entropy", graph=graph)
+
+
+def binary_cross_entropy_with_logits(
+    logits: TensorLike, target: TensorLike, *, reduction: Reduction = "mean"
+) -> Tensor:
+    """Binary cross-entropy of ``sigmoid(logits)`` against ``target`` in ``[0, 1]``.
+
+    Computed as ``softplus(z) - y * z`` with ``softplus(z) = max(z, 0) + log1p(exp(-|z|))``,
+    so neither ``exp`` nor ``log`` can overflow and no probability is ever rounded to 0 or 1.
+    The gradient is ``sigmoid(z) - y`` with respect to the logits (and ``-z`` with respect to
+    soft targets); the Hessian with respect to the logits is ``sigmoid(z) (1 - sigmoid(z))``.
+    ``logits`` and ``target`` must have the same shape.
+    """
+    tz, ty = coerce_pair(logits, target)
+    if tz.shape != ty.shape:
+        raise ValueError(f"logits {tz.shape} and target {ty.shape} must have the same shape")
+    z, y = tz.data, ty.data
+    losses = np.maximum(z, 0) - z * y + np.log1p(np.exp(-np.abs(z)))
+    n = max(losses.size, 1)
+    if reduction == "mean":
+        out: Array = np.asarray(losses.sum() / n, dtype=losses.dtype)
+    elif reduction == "sum":
+        out = np.asarray(losses.sum(), dtype=losses.dtype)
+    elif reduction == "none":
+        out = losses
+    else:
+        raise ValueError(f"unknown reduction {reduction!r}")
+    scale = 1.0 / n if reduction == "mean" else 1.0
+
+    def backward(g: Array, need: tuple[bool, ...]) -> tuple[Array | None, Array | None]:
+        upstream = g if reduction == "none" else np.broadcast_to(g * scale, z.shape)
+        prob = sigmoid(Tensor._wrap(z)).data
+        return (
+            (prob - y) * upstream if need[0] else None,
+            -z * upstream if need[1] else None,
+        )
+
+    def graph(
+        g: Tensor, out: Tensor, need: tuple[bool, ...]
+    ) -> tuple[Tensor | None, Tensor | None]:
+        upstream = g if reduction == "none" else broadcast_to(g * scale, z.shape)
+        return (
+            (sigmoid(tz) - ty) * upstream if need[0] else None,
+            -tz * upstream if need[1] else None,
+        )
+
+    return make_result(out, (tz, ty), backward, "binary_cross_entropy", graph=graph)
 
 
 def mse_loss(
