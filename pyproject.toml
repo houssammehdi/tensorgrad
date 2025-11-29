@@ -42,7 +42,10 @@ include = ["src/tensorgrad", "tests", "examples", "README.md", "LICENSE"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
-markers = ["slow: long-running training runs (enable with --run-slow)"]
+markers = [
+  "slow: long-running training runs (enable with --run-slow)",
+  "torch: comparisons against PyTorch (skipped when torch is not installed)",
+]
 
 [tool.mypy]
 strict = true

@@ -43,3 +43,29 @@ jobs:
 
       - name: Slow training tests
         run: pytest -m slow --run-slow
+
+  parity:
+    # Optional reference check: compares every op and module with PyTorch. It is the only
+    # job that downloads torch (the CPU build, from PyTorch's own package index); the test
+    # jobs above never import it.
+    name: PyTorch parity (CPU torch)
+    runs-on: ubuntu-latest
+    env:
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install CPU PyTorch and tensorgrad
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e ".[dev]"
+
+      - name: Parity tests
+        run: pytest tests/parity -m torch
