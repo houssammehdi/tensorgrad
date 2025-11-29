@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -9,7 +10,15 @@ import pytest
 
 import tensorgrad as tg
 from tensorgrad import nn
-from tensorgrad.datasets import SHAPE_CLASSES, CharTokenizer, make_shapes, make_spiral
+from tensorgrad.datasets import (
+    SHAPE_CLASSES,
+    TINY_SHAKESPEARE_SHA256,
+    CharTokenizer,
+    cache_dir,
+    fetch,
+    make_shapes,
+    make_spiral,
+)
 from tensorgrad.utils import DataLoader, load, save
 
 
@@ -96,3 +105,48 @@ class TestDatasets:
             tok.encode("z")
         with pytest.raises(ValueError, match="empty"):
             CharTokenizer("")
+
+
+class TestFetch:
+    """The downloader, exercised offline through file:// URLs."""
+
+    @staticmethod
+    def source(tmp_path: Path, content: bytes = b"to be, or not to be") -> tuple[str, str, Path]:
+        src = tmp_path / "remote" / "corpus.txt"
+        src.parent.mkdir()
+        src.write_bytes(content)
+        return src.as_uri(), hashlib.sha256(content).hexdigest(), src
+
+    def test_downloads_verifies_and_caches(self, tmp_path: Path) -> None:
+        url, digest, src = self.source(tmp_path)
+        path = fetch(url, digest, "corpus.txt", cache=tmp_path / "cache")
+        assert path.read_bytes() == b"to be, or not to be"
+        src.unlink()  # a second call must be served from the cache
+        assert fetch(url, digest, "corpus.txt", cache=tmp_path / "cache") == path
+
+    def test_rejects_a_mismatching_download_and_leaves_nothing(self, tmp_path: Path) -> None:
+        url, _, _ = self.source(tmp_path)
+        cache = tmp_path / "cache"
+        with pytest.raises(ValueError, match="checksum mismatch"):
+            fetch(url, "0" * 64, "corpus.txt", cache=cache)
+        assert list(cache.iterdir()) == []
+
+    def test_replaces_a_corrupted_cached_copy(self, tmp_path: Path) -> None:
+        url, digest, _ = self.source(tmp_path)
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        (cache / "corpus.txt").write_bytes(b"truncated")
+        assert fetch(url, digest, "corpus.txt", cache=cache).read_bytes() == b"to be, or not to be"
+
+    def test_cache_directory_follows_the_environment(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("TENSORGRAD_CACHE", str(tmp_path / "explicit"))
+        assert cache_dir() == tmp_path / "explicit"
+        monkeypatch.delenv("TENSORGRAD_CACHE")
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+        assert cache_dir() == tmp_path / "xdg" / "tensorgrad"
+
+    def test_pinned_checksum_is_a_sha256_hex_digest(self) -> None:
+        assert len(TINY_SHAKESPEARE_SHA256) == 64
+        int(TINY_SHAKESPEARE_SHA256, 16)

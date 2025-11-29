@@ -1,18 +1,94 @@
-"""Small synthetic datasets and a character tokenizer used by the examples and tests.
+"""Datasets for the examples and tests, and a character tokenizer.
 
-Everything is generated procedurally -- nothing is downloaded.
+The spirals and shapes are generated procedurally. :func:`tiny_shakespeare` downloads Andrej
+Karpathy's ~1.1 MB char-rnn corpus once, verifies its SHA-256 and caches it (see
+:func:`fetch`); nothing else touches the network.
 """
 
 from __future__ import annotations
 
+import hashlib
 import math
+import os
+import shutil
+import urllib.request
 from collections.abc import Iterable
+from pathlib import Path
 
 import numpy as np
 
 from tensorgrad._types import Array
 
-__all__ = ["SHAPE_CLASSES", "CharTokenizer", "make_shapes", "make_spiral"]
+__all__ = [
+    "SHAPE_CLASSES",
+    "TINY_SHAKESPEARE_SHA256",
+    "TINY_SHAKESPEARE_URL",
+    "CharTokenizer",
+    "cache_dir",
+    "fetch",
+    "make_shapes",
+    "make_spiral",
+    "tiny_shakespeare",
+]
+
+#: Karpathy's tiny-shakespeare (40,000 lines of Shakespeare, 1,115,394 characters).
+TINY_SHAKESPEARE_URL = (
+    "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"
+)
+#: SHA-256 of that file, pinned so a changed or corrupted download is rejected.
+TINY_SHAKESPEARE_SHA256 = "86c4e6aa9db7c042ec79f339dcb96d42b0075e16b8fc2e86bf0ca57e2dc565ed"
+
+
+def cache_dir() -> Path:
+    """Where downloads are cached: ``$TENSORGRAD_CACHE``, else ``$XDG_CACHE_HOME/tensorgrad``,
+    else ``~/.cache/tensorgrad``."""
+    if explicit := os.environ.get("TENSORGRAD_CACHE"):
+        return Path(explicit)
+    base = os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache"
+    return Path(base) / "tensorgrad"
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def fetch(
+    url: str, sha256: str, filename: str, *, cache: Path | None = None, timeout: float = 60.0
+) -> Path:
+    """Return a verified local copy of ``url``, downloading it on first use.
+
+    The file lives at ``cache / filename`` (default :func:`cache_dir`). A cached copy whose
+    SHA-256 does not match is discarded and downloaded again; a download that does not match
+    raises ``ValueError`` and leaves nothing behind. Writes go to a temporary file that is
+    renamed into place, so an interrupted download never leaves a truncated file.
+    """
+    path = (cache if cache is not None else cache_dir()) / filename
+    if path.exists():
+        if _sha256(path) == sha256:
+            return path
+        path.unlink()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_name(f"{path.name}.{os.getpid()}.partial")
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response, open(partial, "wb") as fh:
+            shutil.copyfileobj(response, fh)
+        actual = _sha256(partial)
+        if actual != sha256:
+            raise ValueError(f"checksum mismatch for {url}: expected {sha256}, got {actual}")
+        os.replace(partial, path)
+    finally:
+        partial.unlink(missing_ok=True)
+    return path
+
+
+def tiny_shakespeare(cache: Path | None = None) -> str:
+    """Text of the tiny-shakespeare corpus (downloaded and verified once, then cached)."""
+    path = fetch(TINY_SHAKESPEARE_URL, TINY_SHAKESPEARE_SHA256, "tinyshakespeare.txt", cache=cache)
+    return path.read_text(encoding="utf-8")
 
 
 def make_spiral(
