@@ -18,6 +18,7 @@ from hypothesis import strategies as st
 import tensorgrad as tg
 from helpers import check_gradients, distinct, leaf
 from tensorgrad.nn.functional import scaled_dot_product_attention
+from tensorgrad.ops.attention import attention_reference, packed_self_attention
 from tensorgrad.ops.conv import conv2d_input_grad, conv2d_weight_grad
 
 seeds = st.integers(min_value=0, max_value=2**32 - 1)
@@ -401,3 +402,36 @@ def test_scaled_dot_product_attention(rng: np.random.Generator, causal: bool) ->
     q, k, v = leaf(rng, 2, 4, 3), leaf(rng, 2, 4, 3), leaf(rng, 2, 4, 2)
     fn = lambda *ts: scaled_dot_product_attention(*ts, causal=causal)
     assert check_gradients(fn, [q, k, v])
+
+
+def test_attention_with_a_mask_dropout_and_shared_keys(rng: np.random.Generator) -> None:
+    # Queries of 2 heads attend to keys/values shared by both heads (broadcast batch axis),
+    # through a causal mask with a longer key sequence (a cached prefix) and dropout.
+    q, k, v = leaf(rng, 2, 3, 4), leaf(rng, 1, 5, 4), leaf(rng, 1, 5, 2)
+    fn = lambda *ts: scaled_dot_product_attention(
+        *ts, causal=True, dropout_p=0.3, training=True, rng=np.random.default_rng(3)
+    )
+    assert check_gradients(fn, [q, k, v])
+
+
+@pytest.mark.parametrize(("causal", "dropout"), [(True, 0.0), (False, 0.0), (True, 0.25)])
+def test_packed_self_attention(rng: np.random.Generator, causal: bool, dropout: float) -> None:
+    qkv = leaf(rng, 2, 4, 3 * 6)  # D = 6 as two heads of size 3
+    fn = lambda t: packed_self_attention(
+        t, 2, causal=causal, dropout_p=dropout, training=True, rng=np.random.default_rng(5)
+    )
+    assert check_gradients(fn, [qkv])
+
+
+def test_fused_attention_equals_the_unfused_composition(rng: np.random.Generator) -> None:
+    q, k, v = leaf(rng, 2, 4, 3), leaf(rng, 2, 4, 3), leaf(rng, 2, 4, 5)
+    mask = tg.ops.attention.causal_mask(4, 4)
+    fused = scaled_dot_product_attention(q, k, v, causal=True)
+    unfused = attention_reference(q, k, v, mask, None, 0.0)
+    np.testing.assert_allclose(fused.data, unfused.data, rtol=1e-13, atol=1e-15)
+    upstream = rng.standard_normal(fused.shape)
+    g_fused = tg.autograd.grad(fused, [q, k, v], grad_outputs=upstream)
+    g_unfused = tg.autograd.grad(unfused, [q, k, v], grad_outputs=upstream)
+    for a, b in zip(g_fused, g_unfused, strict=True):
+        assert a is not None and b is not None
+        np.testing.assert_allclose(a.data, b.data, rtol=1e-12, atol=1e-14)
