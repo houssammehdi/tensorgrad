@@ -256,17 +256,39 @@ def gelu(a: TensorLike) -> Tensor:
     """GELU with the tanh approximation used by GPT-2.
 
     ``0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x**3)))``
+
+    Forward and backward are written in place: they allocate two arrays each instead of one
+    per arithmetic step, which matters for the large activations of a transformer MLP.
     """
     ta = as_tensor(a)
-    x = ta.data
-    # x * x * x rather than x**3: NumPy's float32 power is an order of magnitude slower.
-    inner = _GELU_C * (x + _GELU_A * (x * x * x))
-    t = np.tanh(inner)
-    out = 0.5 * x * (1 + t)
+    x = ta.data if ta.dtype.kind == "f" else ta.data.astype(np.float64)
+    # Explicit output buffers keep 0-d inputs arrays (plain ``x * x`` would give a scalar).
+    t = np.multiply(x, x, out=np.empty_like(x))
+    t *= _GELU_A
+    t += 1.0
+    t *= x
+    t *= _GELU_C  # sqrt(2/pi) * (x + 0.044715 x^3), without NumPy's slow float32 power
+    np.tanh(t, out=t)
+    out = np.add(t, 1.0, out=np.empty_like(t))
+    out *= x
+    out *= 0.5
 
     def backward(g: Array, need: Need) -> tuple[Array]:
-        d_inner = _GELU_C * (1 + 3 * _GELU_A * x * x)
-        return (g * (0.5 * (1 + t) + 0.5 * x * (1 - t * t) * d_inner),)
+        # d/dx = 0.5 (1 + t) + 0.5 x (1 - t^2) sqrt(2/pi) (1 + 3 * 0.044715 x^2)
+        d = np.multiply(x, x, out=np.empty_like(x))
+        d *= 3 * _GELU_A * _GELU_C
+        d += _GELU_C
+        s = np.multiply(t, t, out=np.empty_like(t))
+        np.subtract(1.0, s, out=s)
+        s *= d
+        s *= x
+        s += t
+        s += 1.0
+        s *= 0.5
+        if np.result_type(s, g) == s.dtype:
+            s *= g
+            return (s,)
+        return (s * g,)
 
     def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor]:
         x2 = ta * ta

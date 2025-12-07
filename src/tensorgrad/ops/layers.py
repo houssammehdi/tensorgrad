@@ -27,14 +27,21 @@ def linear(x: TensorLike, weight: TensorLike, bias: TensorLike | None = None) ->
     tb = None if bias is None else as_tensor(bias)
     if tw.ndim != 2 or tx.ndim == 0 or tx.shape[-1] != tw.shape[1]:
         raise ValueError(f"linear: input {tx.shape} does not match weight {tw.shape}")
-    out = tx.data @ tw.data.T
+    # Flatten the leading axes so the product is one large GEMM: NumPy would otherwise loop
+    # over them and call BLAS once per (T, in) slice.
+    x2 = tx.data.reshape(-1, tw.shape[1])
+    out = x2 @ tw.data.T
     if tb is not None:
-        out = out + tb.data
+        if np.result_type(out, tb.data) == out.dtype:
+            out += tb.data  # ``out`` is fresh from the matmul: safe to update in place
+        else:
+            out = out + tb.data
+    out = out.reshape(*tx.shape[:-1], tw.shape[0])
 
     def backward(g: Array, need: Need) -> tuple[Array | None, ...]:
         g2 = g.reshape(-1, g.shape[-1])
-        gx = (g @ tw.data) if need[0] else None
-        gw = (g2.T @ tx.data.reshape(-1, tx.shape[-1])) if need[1] else None
+        gx = (g2 @ tw.data).reshape(tx.shape) if need[0] else None
+        gw = (g2.T @ x2) if need[1] else None
         if tb is None:
             return gx, gw
         return gx, gw, (g2.sum(axis=0) if need[2] else None)
