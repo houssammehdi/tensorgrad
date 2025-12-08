@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -150,3 +151,36 @@ class TestFetch:
     def test_pinned_checksum_is_a_sha256_hex_digest(self) -> None:
         assert len(TINY_SHAKESPEARE_SHA256) == 64
         int(TINY_SHAKESPEARE_SHA256, 16)
+
+
+class TestRetainFreedMemory:
+    SCRIPT = """
+import resource, sys
+import numpy as np
+from tensorgrad.utils import retain_freed_memory
+applied = retain_freed_memory() if sys.argv[1] == "tuned" else False
+before = resource.getrusage(resource.RUSAGE_SELF).ru_minflt
+for _ in range(20):  # like training steps: many activations alive at once, freed together
+    live = [np.ones(400_000) for _ in range(30)]  # 30 arrays of 3.2 MB, every page written
+    del live
+print(applied, resource.getrusage(resource.RUSAGE_SELF).ru_minflt - before)
+"""
+
+    def run(self, mode: str) -> tuple[bool, int]:
+        import subprocess
+        import sys
+
+        out = subprocess.run(
+            [sys.executable, "-c", self.SCRIPT, mode], capture_output=True, text=True, check=True
+        ).stdout.split()
+        return out[0] == "True", int(out[1])
+
+    @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="glibc tuning only")
+    def test_freed_arrays_are_reused_instead_of_refaulted(self) -> None:
+        # Run in subprocesses: the setting is process-wide and must not leak into this one.
+        applied, tuned_faults = self.run("tuned")
+        if not applied:
+            pytest.skip("not a glibc system")
+        _, default_faults = self.run("default")
+        # By default every "step" faults its ~96 MB back in; tuned, only the first one does.
+        assert tuned_faults * 5 < default_faults

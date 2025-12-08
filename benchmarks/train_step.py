@@ -13,7 +13,8 @@ Three workloads, each built exactly like the corresponding example:
   clipping.
 
 Each workload runs ``--warmup`` untimed steps, then ``--repeats`` timed ones; the median is
-reported. Timings on a shared machine are indicative only: check ``/proc/loadavg`` first.
+reported. ``--retain-freed-memory`` applies :func:`tensorgrad.utils.retain_freed_memory`
+first. Timings on a shared machine are indicative only: check ``/proc/loadavg`` first.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ import numpy as np
 import tensorgrad as tg
 from tensorgrad import nn, optim
 from tensorgrad.datasets import make_shapes, make_spiral
+from tensorgrad.utils import retain_freed_memory
 
 Step = Callable[[], None]
 
@@ -122,7 +124,11 @@ def main() -> None:
     parser.add_argument("--workloads", nargs="+", default=list(WORKLOADS), choices=WORKLOADS)
     parser.add_argument("--repeats", type=int, default=None, help="override timed steps")
     parser.add_argument("--json", action="store_true", help="print one JSON object")
+    parser.add_argument(
+        "--retain-freed-memory", action="store_true", help="tune glibc malloc first"
+    )
     args = parser.parse_args()
+    retained = args.retain_freed_memory and retain_freed_memory()
 
     results = {}
     for name in args.workloads:
@@ -139,6 +145,7 @@ def main() -> None:
         "numpy": np.__version__,
         "python": platform.python_version(),
         "OPENBLAS_NUM_THREADS": os.environ.get("OPENBLAS_NUM_THREADS", "unset"),
+        "retain_freed_memory": retained,
         "loadavg_1min": os.getloadavg()[0],
     }
     if args.json:
