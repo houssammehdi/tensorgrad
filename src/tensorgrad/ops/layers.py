@@ -74,31 +74,43 @@ def layer_norm(
     tx = as_tensor(x)
     tw = None if weight is None else as_tensor(weight)
     tb = None if bias is None else as_tensor(bias)
-    d = tx.shape[-1]
-    mu = tx.data.mean(axis=-1, keepdims=True)
-    centered = tx.data - mu
-    rstd = 1.0 / np.sqrt((centered * centered).mean(axis=-1, keepdims=True) + eps)
-    xhat = centered * rstd
-    out = xhat if tw is None else xhat * tw.data
-    if tb is not None:
-        out = out + tb.data
+    data = tx.data if tx.dtype.kind == "f" else tx.data.astype(np.float64)
+    # In place on two buffers: the centred input becomes xhat, the squares become the output.
+    xhat = data - data.mean(axis=-1, keepdims=True)
+    scratch = np.multiply(xhat, xhat, out=np.empty_like(xhat))
+    rstd = 1.0 / np.sqrt(scratch.mean(axis=-1, keepdims=True) + eps)
+    xhat *= rstd
+    if tw is None and tb is None:
+        out = xhat
+    else:
+        out = scratch
+        if tw is None:
+            out[...] = xhat
+        else:
+            np.multiply(xhat, tw.data, out=out)
+        if tb is not None:
+            out += tb.data
     lead = tuple(range(tx.ndim - 1))
 
     def backward(g: Array, need: Need) -> tuple[Array | None, ...]:
-        grads: list[Array | None] = []
-        if need[0]:
-            gh = g if tw is None else g * tw.data
-            mean_gh = gh.sum(axis=-1, keepdims=True) / d
-            mean_ghx = (gh * xhat).sum(axis=-1, keepdims=True) / d
-            grads.append(rstd * (gh - mean_gh - xhat * mean_ghx))
-        else:
-            grads.append(None)
+        tmp = np.empty(g.shape, dtype=np.result_type(g, xhat))
         k = 1  # parents are (x, [weight], [bias]); need[k] follows that order
+        grads: list[Array | None] = [None]
         if tw is not None:
-            grads.append((g * xhat).sum(axis=lead) if need[k] else None)
+            if need[k]:
+                grads.append(np.multiply(g, xhat, out=tmp).sum(axis=lead))
+            else:
+                grads.append(None)
             k += 1
         if tb is not None:
             grads.append(g.sum(axis=lead) if need[k] else None)
+        if need[0]:
+            gh = g * tw.data if tw is not None else np.array(g, dtype=tmp.dtype, copy=True)
+            mean_ghx = np.multiply(gh, xhat, out=tmp).mean(axis=-1, keepdims=True)
+            gh -= gh.mean(axis=-1, keepdims=True)
+            gh -= np.multiply(xhat, mean_ghx, out=tmp)
+            gh *= rstd
+            grads[0] = gh
         return tuple(grads)
 
     def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor | None, ...]:
@@ -123,8 +135,7 @@ def layer_norm(
         return tuple(grads)
 
     parents = tuple(t for t in (tx, tw, tb) if t is not None)
-    result = out.astype(tx.dtype, copy=False)
-    return make_result(result, parents, backward, "layer_norm", graph=graph)
+    return make_result(out, parents, backward, "layer_norm", graph=graph)
 
 
 def batch_norm(
