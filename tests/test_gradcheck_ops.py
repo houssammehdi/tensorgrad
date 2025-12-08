@@ -427,7 +427,7 @@ def test_fused_attention_equals_the_unfused_composition(rng: np.random.Generator
     q, k, v = leaf(rng, 2, 4, 3), leaf(rng, 2, 4, 3), leaf(rng, 2, 4, 5)
     mask = tg.ops.attention.causal_mask(4, 4)
     fused = scaled_dot_product_attention(q, k, v, causal=True)
-    unfused = attention_reference(q, k, v, mask, None, 0.0)
+    unfused = attention_reference(q, k, v, mask, None, 1.0)
     np.testing.assert_allclose(fused.data, unfused.data, rtol=1e-13, atol=1e-15)
     upstream = rng.standard_normal(fused.shape)
     g_fused = tg.autograd.grad(fused, [q, k, v], grad_outputs=upstream)

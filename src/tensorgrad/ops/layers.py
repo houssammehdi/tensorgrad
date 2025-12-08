@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from tensorgrad._random import get_rng
+from tensorgrad._random import get_rng, keep_mask
 from tensorgrad._types import Array
 from tensorgrad.autograd import no_grad
 from tensorgrad.ops import elementwise, reduce
@@ -205,17 +205,17 @@ def dropout(
 ) -> Tensor:
     """Inverted dropout: zero each element with probability ``p`` and scale the rest by
     ``1 / (1 - p)`` so the expected activation is unchanged; the identity when not training.
+
+    ``p`` is quantised to a multiple of ``2**-16`` and the scale matches it exactly (see
+    :func:`tensorgrad._random.keep_mask`).
     """
     tx = as_tensor(x)
     if not 0.0 <= p <= 1.0:
         raise ValueError(f"dropout probability must be in [0, 1], got {p}")
     if not training or p == 0.0:
         return tx
-    if p == 1.0:
-        mask = np.zeros_like(tx.data)
-    else:
-        keep = (rng or get_rng()).random(tx.shape, dtype=np.float32) >= p
-        mask = keep.astype(tx.dtype) / np.asarray(1.0 - p, dtype=tx.dtype)
+    keep, scale = keep_mask(tx.shape, p, rng or get_rng())
+    mask = keep * np.asarray(scale, dtype=tx.dtype)
 
     def backward(g: Array, need: Need) -> tuple[Array]:
         return (g * mask,)

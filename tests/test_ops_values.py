@@ -212,6 +212,32 @@ def test_dropout_statistics_and_eval_identity(rng: np.random.Generator) -> None:
         tg.dropout(x, 1.5)
 
 
+@pytest.mark.parametrize("generator", [np.random.PCG64, np.random.MT19937])
+def test_dropout_masks_are_unbiased_for_any_bit_generator(generator: type) -> None:
+    # PCG64 takes the fast path (raw 64-bit words split into four 16-bit uniforms); MT19937
+    # produces only 32 bits per raw word and must use the portable path instead.
+    from tensorgrad._random import keep_mask
+
+    rng = np.random.Generator(generator(0))
+    keep, scale = keep_mask((400_000,), 0.1, rng)
+    threshold = round(0.1 * 65536)
+    assert scale == 65536 / (65536 - threshold)  # matches the quantised keep probability
+    assert keep.mean() == pytest.approx(1 - threshold / 65536, abs=3e-3)
+    assert (keep * scale).mean() == pytest.approx(1.0, abs=4e-3)
+    again, _ = keep_mask((400_000,), 0.1, np.random.Generator(generator(0)))
+    np.testing.assert_array_equal(keep, again)  # deterministic for a seeded generator
+
+
+def test_dropout_probability_quantisation_is_exact_for_dyadic_rates() -> None:
+    from tensorgrad._random import keep_mask
+
+    rng = np.random.default_rng(0)
+    for p, scale in ((0.5, 2.0), (0.25, 4 / 3), (0.0, 1.0)):
+        assert keep_mask((10,), p, rng)[1] == pytest.approx(scale, rel=1e-15)
+    keep, scale = keep_mask((10,), 1.0, rng)
+    assert not keep.any() and scale == 0.0
+
+
 def test_embedding_lookup() -> None:
     w = tg.Tensor(np.arange(12.0).reshape(4, 3))
     out = tg.embedding(np.array([[3, 0]]), w)

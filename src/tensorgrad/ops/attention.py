@@ -25,7 +25,7 @@ from typing import Any
 
 import numpy as np
 
-from tensorgrad._random import get_rng
+from tensorgrad._random import get_rng, keep_mask
 from tensorgrad._types import Array
 from tensorgrad.ops import activation, shape
 from tensorgrad.ops._util import as_tensor, make_result, unbroadcast
@@ -57,18 +57,18 @@ def _forbidden(q_len: int, k_len: int, causal: bool, mask: Array | None) -> Arra
 
 def _dropout_keep(
     shape_: tuple[int, ...], p: float, training: bool, rng: np.random.Generator | None
-) -> Array | None:
+) -> tuple[Array | None, float]:
+    """Keep-mask for dropout on the attention weights (``None`` when inactive) and its scale."""
     if not training or p == 0.0:
-        return None
+        return None, 1.0
     if not 0.0 <= p < 1.0:
         raise ValueError(f"attention dropout must be in [0, 1), got {p}")
-    keep: Array = (rng or get_rng()).random(shape_, dtype=np.float32) >= p
-    return keep
+    return keep_mask(shape_, p, rng or get_rng())
 
 
 # ------------------------------------------------------------------ array kernels
 def attention_forward(
-    q: Array, k: Array, v: Array, forbidden: Array | None, keep: Array | None, dropout_p: float
+    q: Array, k: Array, v: Array, forbidden: Array | None, keep: Array | None, keep_scale: float
 ) -> tuple[Array, Array]:
     """``(output, probabilities)`` of attention on arrays shaped ``(..., T, d)``."""
     scale = 1.0 / math.sqrt(q.shape[-1])
@@ -83,7 +83,7 @@ def attention_forward(
     s -= m
     np.exp(s, out=s)
     s /= s.sum(axis=-1, keepdims=True)
-    weights = s if keep is None else s * keep * (1.0 / (1.0 - dropout_p))
+    weights = s if keep is None else s * keep * keep_scale
     return weights @ v, s
 
 
@@ -94,20 +94,19 @@ def attention_backward(
     v: Array,
     probs: Array,
     keep: Array | None,
-    dropout_p: float,
+    keep_scale: float,
     need: Need,
 ) -> tuple[Array | None, Array | None, Array | None]:
     """``(dQ, dK, dV)`` for the upstream gradient ``g`` of the attention output."""
     scale = 1.0 / math.sqrt(q.shape[-1])
-    inv_keep = 1.0 / (1.0 - dropout_p)
-    weights = probs if keep is None else probs * keep * inv_keep
+    weights = probs if keep is None else probs * keep * keep_scale
     dv = np.swapaxes(weights, -1, -2) @ g if need[2] else None
     if not (need[0] or need[1]):
         return None, None, dv
     ds = g @ np.swapaxes(v, -1, -2)
     if keep is not None:
         ds *= keep
-        ds *= inv_keep
+        ds *= keep_scale
     ds -= (ds * probs).sum(axis=-1, keepdims=True)
     ds *= probs
     ds *= scale
@@ -124,12 +123,12 @@ def _probabilities(q: Tensor, k: Tensor, forbidden: Array | None) -> Tensor:
 
 
 def attention_reference(
-    q: Tensor, k: Tensor, v: Tensor, forbidden: Array | None, keep: Array | None, dropout_p: float
+    q: Tensor, k: Tensor, v: Tensor, forbidden: Array | None, keep: Array | None, keep_scale: float
 ) -> Tensor:
     """The same function composed of primitive differentiable ops."""
     weights = _probabilities(q, k, forbidden)
     if keep is not None:
-        weights = weights * (keep * (1.0 / (1.0 - dropout_p)))
+        weights = weights * (keep * keep_scale)
     return weights @ v
 
 
@@ -140,12 +139,12 @@ def attention_backward_graph(
     v: Tensor,
     forbidden: Array | None,
     keep: Array | None,
-    dropout_p: float,
+    keep_scale: float,
     need: Need,
 ) -> tuple[Tensor | None, Tensor | None, Tensor | None]:
     """:func:`attention_backward` written with differentiable tensor ops."""
     probs = _probabilities(q, k, forbidden)
-    drop = None if keep is None else keep * (1.0 / (1.0 - dropout_p))
+    drop = None if keep is None else keep * keep_scale
     weights = probs if drop is None else probs * drop
     dv = shape.transpose(weights, -1, -2) @ g if need[2] else None
     if not (need[0] or need[1]):
@@ -187,18 +186,18 @@ def scaled_dot_product_attention(
     forbidden = _forbidden(tq.shape[-2], tk.shape[-2], causal, mask)
     batch = np.broadcast_shapes(tq.shape[:-2], tk.shape[:-2])
     score_shape = (*batch, tq.shape[-2], tk.shape[-2])
-    keep = _dropout_keep(score_shape, dropout_p, training, rng)
-    out, probs = attention_forward(tq.data, tk.data, tv.data, forbidden, keep, dropout_p)
+    keep, keep_scale = _dropout_keep(score_shape, dropout_p, training, rng)
+    out, probs = attention_forward(tq.data, tk.data, tv.data, forbidden, keep, keep_scale)
 
     def backward(g: Array, need: Need) -> tuple[Array | None, ...]:
-        grads = attention_backward(g, tq.data, tk.data, tv.data, probs, keep, dropout_p, need)
+        grads = attention_backward(g, tq.data, tk.data, tv.data, probs, keep, keep_scale, need)
         return tuple(
             None if gr is None else _sum_like(gr, t.shape)
             for gr, t in zip(grads, (tq, tk, tv), strict=True)
         )
 
     def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor | None, ...]:
-        grads = attention_backward_graph(g, tq, tk, tv, forbidden, keep, dropout_p, need)
+        grads = attention_backward_graph(g, tq, tk, tv, forbidden, keep, keep_scale, need)
         return tuple(
             None if gr is None else shape.sum_to(gr, t.shape)
             for gr, t in zip(grads, (tq, tk, tv), strict=True)
@@ -244,14 +243,14 @@ def packed_self_attention(
     b, t, d3 = tqkv.shape
     d = d3 // 3
     forbidden = _forbidden(t, t, causal, None)
-    keep = _dropout_keep((b, num_heads, t, t), dropout_p, training, rng)
+    keep, keep_scale = _dropout_keep((b, num_heads, t, t), dropout_p, training, rng)
     q, k, v = _split_heads(tqkv.data, num_heads)
-    y, probs = attention_forward(q, k, v, forbidden, keep, dropout_p)
+    y, probs = attention_forward(q, k, v, forbidden, keep, keep_scale)
     out = y.transpose(0, 2, 1, 3).reshape(b, t, d)
 
     def backward(g: Array, need: Need) -> tuple[Array]:
         gy = g.reshape(b, t, num_heads, d // num_heads).transpose(0, 2, 1, 3)
-        grads = attention_backward(gy, q, k, v, probs, keep, dropout_p, (True, True, True))
+        grads = attention_backward(gy, q, k, v, probs, keep, keep_scale, (True, True, True))
         dqkv = np.empty((b, t, 3, num_heads, d // num_heads), dtype=np.result_type(*grads))
         for i, gr in enumerate(grads):
             dqkv[:, :, i] = gr.transpose(0, 2, 1, 3)  # type: ignore[union-attr]
@@ -262,7 +261,7 @@ def packed_self_attention(
         heads: list[Any] = [shape.permute(parts[:, :, i], (0, 2, 1, 3)) for i in range(3)]
         gy = shape.permute(shape.reshape(g, (b, t, num_heads, d // num_heads)), (0, 2, 1, 3))
         grads = attention_backward_graph(
-            gy, heads[0], heads[1], heads[2], forbidden, keep, dropout_p, (True, True, True)
+            gy, heads[0], heads[1], heads[2], forbidden, keep, keep_scale, (True, True, True)
         )
         merged = shape.stack([shape.permute(gr, (0, 2, 1, 3)) for gr in grads if gr is not None], 2)
         return (shape.reshape(merged, (b, t, d3)),)
