@@ -180,6 +180,19 @@ def test_sigmoid_is_stable_and_symmetric() -> None:
     np.testing.assert_allclose(s + s[::-1], 1.0)
 
 
+@pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64])
+def test_sigmoid_keeps_floating_dtypes(dtype: type) -> None:
+    assert tg.sigmoid(tg.Tensor(np.array([-2.0, 0.5], dtype=dtype))).dtype == dtype
+
+
+def test_sigmoid_of_integers_is_a_float() -> None:
+    # Regression: the result was cast back to the input dtype, so integers truncated to 0.
+    x = np.array([1, 2, -3])
+    s = tg.sigmoid(tg.Tensor(x))
+    assert s.dtype == np.float64
+    np.testing.assert_allclose(s.data, 1 / (1 + np.exp(-x)))
+
+
 def test_gelu_reference_values() -> None:
     x = np.array([-3.0, -1.0, 0.0, 1.0, 3.0])
     c = math.sqrt(2 / math.pi)

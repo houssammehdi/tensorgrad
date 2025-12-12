@@ -216,13 +216,20 @@ def tanh(a: TensorLike) -> Tensor:
     return make_result(out, (ta,), backward, "tanh", graph=graph)
 
 
+def sigmoid_array(x: Array) -> Array:
+    """Logistic sigmoid of an array, evaluated without overflow for large ``|x|``.
+
+    Floating inputs keep their dtype; integer inputs give float64, as :func:`numpy.exp` does.
+    """
+    # exp(-|x|) never overflows; pick the algebraically equivalent branch per sign.
+    z = np.exp(-np.abs(x))
+    return np.where(x >= 0, 1 / (1 + z), z / (1 + z))
+
+
 def sigmoid(a: TensorLike) -> Tensor:
     """Elementwise logistic sigmoid, evaluated without overflow for large ``|a|``."""
     ta = as_tensor(a)
-    x = ta.data
-    # exp(-|x|) never overflows; pick the algebraically equivalent branch per sign.
-    z = np.exp(-np.abs(x))
-    out = np.where(x >= 0, 1 / (1 + z), z / (1 + z)).astype(x.dtype, copy=False)
+    out = sigmoid_array(ta.data)
 
     def backward(g: Array, need: Need) -> tuple[Array]:
         return (g * out * (1 - out),)
