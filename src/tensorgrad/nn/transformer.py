@@ -12,12 +12,12 @@ from tensorgrad._random import get_rng
 from tensorgrad._types import Array
 from tensorgrad.autograd import no_grad
 from tensorgrad.nn import init
-from tensorgrad.nn.attention import MultiHeadAttention
+from tensorgrad.nn.attention import LayerCache, MultiHeadAttention
 from tensorgrad.nn.layers import GELU, Dropout, Embedding, LayerNorm, Linear, Sequential
 from tensorgrad.nn.module import Module
 from tensorgrad.tensor import Tensor
 
-__all__ = ["GPT", "GPTConfig", "TransformerBlock"]
+__all__ = ["GPT", "GPTConfig", "KVCache", "TransformerBlock"]
 
 
 class TransformerBlock(Module):
@@ -41,9 +41,27 @@ class TransformerBlock(Module):
             Dropout(dropout),
         )
 
-    def forward(self, x: Tensor) -> Tensor:
-        x = x + self.attn(self.ln1(x))
+    def forward(self, x: Tensor, cache: LayerCache | None = None) -> Tensor:
+        x = x + self.attn(self.ln1(x), cache)
         return x + self.mlp(self.ln2(x))
+
+
+@dataclass
+class KVCache:
+    """Attention keys and values of every layer for the tokens a :class:`GPT` has seen.
+
+    With a cache, :meth:`GPT.forward` processes only the *new* tokens: their positions
+    continue from :attr:`length` and they attend to the cached keys, so producing the next
+    token costs one position per layer instead of the whole context. Create one with
+    :meth:`GPT.make_cache`; it is for inference (evaluation mode, no graph).
+    """
+
+    layers: list[LayerCache]
+
+    @property
+    def length(self) -> int:
+        """Number of positions already cached."""
+        return self.layers[0].length if self.layers else 0
 
 
 @dataclass(frozen=True)
@@ -99,17 +117,43 @@ class GPT(Module):
             elif isinstance(module, Embedding):
                 init.normal_(module.weight, 0.0, 0.02)
 
-    def forward(self, idx: Tensor | Array) -> Tensor:
-        """Map token ids ``(B, T)`` to next-token logits ``(B, T, vocab_size)``."""
+    def make_cache(self, batch_size: int) -> KVCache:
+        """An empty :class:`KVCache` for ``batch_size`` sequences of up to ``block_size``."""
+        dtype = self.tok_emb.weight.dtype
+        layers = []
+        for block in self.blocks:
+            assert isinstance(block, TransformerBlock)
+            attn = block.attn
+            shape = (batch_size, attn.num_heads, self.config.block_size, attn.head_dim)
+            layers.append(LayerCache(np.empty(shape, dtype), np.empty(shape, dtype)))
+        return KVCache(layers)
+
+    def forward(self, idx: Tensor | Array, cache: KVCache | None = None) -> Tensor:
+        """Map token ids ``(B, T)`` to next-token logits ``(B, T, vocab_size)``.
+
+        With a ``cache`` the ids are the tokens that follow the cached ones: positions start
+        at ``cache.length`` and the cache is extended (inference only; no graph is recorded).
+        """
         tokens = np.asarray(idx.data if isinstance(idx, Tensor) else idx)
         if tokens.ndim != 2:
             raise ValueError(f"expected (B, T) token ids, got shape {tokens.shape}")
+        start = 0 if cache is None else cache.length
         t = tokens.shape[1]
-        if t > self.config.block_size:
-            raise ValueError(f"sequence length {t} exceeds block_size {self.config.block_size}")
-        x = self.tok_emb(tokens) + self.pos_emb(np.arange(t))
-        x = self.blocks(self.drop(x))
-        return self.head(self.ln_f(x))
+        if start + t > self.config.block_size:
+            raise ValueError(
+                f"sequence length {start + t} exceeds block_size {self.config.block_size}"
+            )
+        if cache is None:
+            x = self.tok_emb(tokens) + self.pos_emb(np.arange(t))
+            x = self.blocks(self.drop(x))
+            return self.head(self.ln_f(x))
+        if self.training:
+            raise ValueError("a KV cache is for inference: call eval() first")
+        with no_grad():
+            x = self.tok_emb(tokens) + self.pos_emb(np.arange(start, start + t))
+            for block, layer in zip(self.blocks, cache.layers, strict=True):
+                x = block(x, layer)
+            return self.head(self.ln_f(x))
 
     def generate(
         self,
@@ -119,12 +163,19 @@ class GPT(Module):
         temperature: float = 1.0,
         top_k: int | None = None,
         rng: np.random.Generator | None = None,
+        use_cache: bool = True,
     ) -> Array:
         """Autoregressively extend ``idx`` (``(B, T)`` ids) by ``max_new_tokens`` samples.
 
         Runs in evaluation mode under :class:`~tensorgrad.no_grad`; the context is cropped to
         the last ``block_size`` tokens. ``top_k`` restricts sampling to the k likeliest tokens;
         ``rng`` defaults to the global generator (see :func:`tensorgrad.manual_seed`).
+
+        With ``use_cache`` a :class:`KVCache` makes each new token cost one position per
+        layer while the sequence fits in ``block_size``. Past that, the positions of the
+        cropped window shift at every step and the learned position embeddings are
+        absolute, so the window is re-encoded exactly as without the cache: both settings
+        produce the same tokens.
         """
         if temperature <= 0:
             raise ValueError("temperature must be positive")
@@ -134,9 +185,19 @@ class GPT(Module):
         out = np.asarray(idx, dtype=np.int64)
         try:
             with no_grad():
+                block = self.config.block_size
+                cache: KVCache | None = None
                 for _ in range(max_new_tokens):
-                    context = out[:, -self.config.block_size :]
-                    logits = self(context).data[:, -1, :].astype(np.float64) / temperature
+                    if not use_cache:
+                        step_logits = self(out[:, -block:])
+                    elif cache is not None and cache.length == out.shape[1] - 1:
+                        step_logits = self(out[:, -1:], cache=cache)  # just the newest token
+                    else:  # first step, or the window slid: encode the (cropped) context
+                        cache = self.make_cache(len(out))
+                        step_logits = self(out[:, -block:], cache=cache)
+                    if out.shape[1] >= block:
+                        cache = None  # the next window starts one position later
+                    logits = step_logits.data[:, -1, :].astype(np.float64) / temperature
                     if top_k is not None:
                         kth = np.sort(logits, axis=-1)[:, -min(top_k, logits.shape[-1])]
                         logits = np.where(logits < kth[:, None], -np.inf, logits)

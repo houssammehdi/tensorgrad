@@ -316,3 +316,43 @@ class TestGPT:
         model = nn.GPT(self.config(block_size=4))
         out = model.generate(np.array([[1, 2, 3]]), 6, rng=np.random.default_rng(1))
         assert out.shape == (1, 9)
+
+
+class TestKVCache:
+    @pytest.fixture
+    def model(self, float64_default: object) -> nn.GPT:
+        config = nn.GPTConfig(vocab_size=13, block_size=10, n_layer=2, n_head=2, n_embd=16)
+        return nn.GPT(config).eval()
+
+    def test_incremental_logits_equal_the_full_forward_pass(self, model: nn.GPT) -> None:
+        ids = np.random.default_rng(0).integers(0, 13, size=(3, 10))
+        with tg.no_grad():
+            full = model(ids).data
+        cache = model.make_cache(batch_size=3)
+        pieces = [model(ids[:, :4], cache=cache).data]  # prefill four tokens at once
+        for t in range(4, 10):  # then one token at a time
+            pieces.append(model(ids[:, t : t + 1], cache=cache).data)
+        assert cache.length == 10
+        np.testing.assert_allclose(np.concatenate(pieces, axis=1), full, rtol=1e-12, atol=1e-14)
+
+    @pytest.mark.parametrize("top_k", [None, 3])
+    def test_generation_with_and_without_the_cache_is_identical(
+        self, model: nn.GPT, top_k: int | None
+    ) -> None:
+        prompt = np.array([[1, 2, 3], [4, 5, 6]])
+        # 25 new tokens run far past block_size, through the re-encoding path as well.
+        runs = [
+            model.generate(prompt, 25, top_k=top_k, rng=np.random.default_rng(7), use_cache=c)
+            for c in (True, False)
+        ]
+        np.testing.assert_array_equal(runs[0], runs[1])
+        assert runs[0].shape == (2, 28)
+
+    def test_cache_limits_and_mode(self, model: nn.GPT) -> None:
+        cache = model.make_cache(batch_size=1)
+        model(np.zeros((1, 10), dtype=np.int64), cache=cache)
+        with pytest.raises(ValueError, match="block_size"):
+            model(np.zeros((1, 1), dtype=np.int64), cache=cache)
+        model.train()
+        with pytest.raises(ValueError, match="inference"):
+            model(np.zeros((1, 1), dtype=np.int64), cache=model.make_cache(1))

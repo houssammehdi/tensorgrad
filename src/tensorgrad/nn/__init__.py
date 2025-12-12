@@ -20,7 +20,7 @@ from tensorgrad.nn.layers import (
     Tanh,
 )
 from tensorgrad.nn.module import IncompatibleKeys, Module, Parameter
-from tensorgrad.nn.transformer import GPT, GPTConfig, TransformerBlock
+from tensorgrad.nn.transformer import GPT, GPTConfig, KVCache, TransformerBlock
 
 __all__ = [
     "GELU",
@@ -34,6 +34,7 @@ __all__ = [
     "GPTConfig",
     "Identity",
     "IncompatibleKeys",
+    "KVCache",
     "LayerNorm",
     "Linear",
     "MaxPool2d",
