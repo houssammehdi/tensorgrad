@@ -1,48 +1,57 @@
-"""Train a small character-level GPT on bundled Shakespeare and sample from it.
+"""Train a character-level GPT on tiny-shakespeare and sample from it.
 
-    python examples/char_gpt.py --steps 1200 --seed 0
+    python examples/char_gpt.py --seed 0
 
-The corpus (examples/data/shakespeare.txt, ~13 KB of public-domain speeches and sonnets) is
-split 90/10 into train/validation text. Training uses AdamW with decoupled weight decay on
-the weight matrices only, a cosine schedule with warm-up and global-norm gradient clipping.
-At the end the script samples text, optionally saves a checkpoint, and (if matplotlib is
-installed) plots the loss curves to docs/gpt_loss.png.
+The corpus is Andrej Karpathy's tiny-shakespeare (1,115,394 characters of Shakespeare's
+plays), downloaded once, verified against a pinned SHA-256 and cached in
+``~/.cache/tensorgrad`` (see ``tensorgrad.datasets.tiny_shakespeare``). Without network
+access the script falls back to the 13 KB excerpt bundled in ``examples/data`` and says so.
+The text is split 90/10 into training and validation characters.
+
+Training uses AdamW (decoupled weight decay on the weight matrices only), a cosine schedule
+with linear warm-up and global-norm gradient clipping. Train and validation losses are
+measured on fixed random windows so the curves are not dominated by sampling noise. At the
+end the script samples text with the KV cache, optionally saves a checkpoint, and (if
+matplotlib is installed) plots the loss curves to docs/gpt_loss.png.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import time
+import urllib.error
 from pathlib import Path
 
 import numpy as np
 
 import tensorgrad as tg
+from _style import INK, INK_SECONDARY, SERIES, SURFACE, import_pyplot, style_axes
 from tensorgrad import nn, optim
-from tensorgrad.datasets import CharTokenizer
-from tensorgrad.utils import load, save
+from tensorgrad.datasets import CharTokenizer, tiny_shakespeare
+from tensorgrad.utils import load, retain_freed_memory, save
 
 ROOT = Path(__file__).resolve().parent
-DEFAULT_CORPUS = ROOT / "data" / "shakespeare.txt"
+BUNDLED_CORPUS = ROOT / "data" / "shakespeare.txt"
 DEFAULT_PLOT = ROOT.parent / "docs" / "gpt_loss.png"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--steps", type=int, default=1200, help="optimisation steps")
+    parser.add_argument("--steps", type=int, default=4000, help="optimisation steps")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
-    parser.add_argument("--block-size", type=int, default=64, help="context length")
-    parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--n-layer", type=int, default=3)
+    parser.add_argument("--corpus", type=Path, default=None, help="text file (default: download)")
+    parser.add_argument("--block-size", type=int, default=128, help="context length")
+    parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--n-layer", type=int, default=4)
     parser.add_argument("--n-head", type=int, default=4)
-    parser.add_argument("--n-embd", type=int, default=96)
+    parser.add_argument("--n-embd", type=int, default=128)
     parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--lr", type=float, default=2e-3)
+    parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=0.1)
-    parser.add_argument("--warmup", type=int, default=100)
-    parser.add_argument("--eval-interval", type=int, default=100)
-    parser.add_argument("--eval-batches", type=int, default=10)
+    parser.add_argument("--warmup", type=int, default=200)
+    parser.add_argument("--eval-interval", type=int, default=250)
+    parser.add_argument("--eval-batches", type=int, default=20, help="fixed windows x batch")
     parser.add_argument("--max-minutes", type=float, default=None, help="stop early after this")
     parser.add_argument("--sample-chars", type=int, default=600)
     parser.add_argument("--prompt", default="ROMEO:\n")
@@ -50,69 +59,76 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-k", type=int, default=None)
     parser.add_argument("--checkpoint", type=Path, default=None, help="save weights here")
     parser.add_argument("--resume", type=Path, default=None, help="load weights before training")
+    parser.add_argument("--history", type=Path, default=None, help="write the curves as JSON")
     parser.add_argument("--plot", type=Path, default=DEFAULT_PLOT, help="loss-curve PNG path")
     parser.add_argument("--no-plot", action="store_true")
     return parser.parse_args()
 
 
-def get_batch(
-    data: np.ndarray, block_size: int, batch_size: int, rng: np.random.Generator
-) -> tuple[np.ndarray, np.ndarray]:
-    """Random windows of ``block_size`` tokens and the same windows shifted by one."""
-    starts = rng.integers(0, len(data) - block_size - 1, size=batch_size)
-    offsets = np.arange(block_size)
-    x = data[starts[:, None] + offsets]
-    return x, data[starts[:, None] + offsets + 1]
+def load_corpus(path: Path | None) -> tuple[str, str]:
+    """Text and a description of where it came from."""
+    if path is not None:
+        return path.read_text(encoding="utf-8"), str(path)
+    try:
+        return tiny_shakespeare(), "tiny-shakespeare (SHA-256 verified)"
+    except (urllib.error.URLError, OSError) as exc:
+        print(f"could not download tiny-shakespeare ({exc}); using the bundled 13 KB excerpt")
+        return BUNDLED_CORPUS.read_text(encoding="utf-8"), f"{BUNDLED_CORPUS} (offline fallback)"
+
+
+def windows(data: np.ndarray, starts: np.ndarray, block_size: int) -> tuple[np.ndarray, np.ndarray]:
+    """Inputs ``data[s : s + T]`` and next-character targets for each start ``s``."""
+    idx = starts[:, None] + np.arange(block_size)
+    return data[idx], data[idx + 1]
+
+
+def random_starts(
+    rng: np.random.Generator, n_tokens: int, block_size: int, count: int
+) -> np.ndarray:
+    """``count`` uniform window starts; the last valid one is ``n_tokens - block_size - 1``
+    (its final target is the last token)."""
+    return rng.integers(0, n_tokens - block_size, size=count)
 
 
 def estimate_loss(
-    model: nn.GPT, data: np.ndarray, args: argparse.Namespace, rng: np.random.Generator
+    model: nn.GPT, data: np.ndarray, starts: np.ndarray, args: argparse.Namespace
 ) -> float:
+    """Mean cross-entropy over the fixed windows at ``starts`` (dropout off, no graph)."""
     model.eval()
-    losses = []
+    total = 0.0
     with tg.no_grad():
-        for _ in range(args.eval_batches):
-            x, y = get_batch(data, args.block_size, args.batch_size, rng)
-            losses.append(tg.cross_entropy(model(x), y).item())
+        for batch in np.array_split(starts, max(len(starts) // args.batch_size, 1)):
+            x, y = windows(data, batch, args.block_size)
+            total += tg.cross_entropy(model(x), y).item() * len(batch)
     model.train()
-    return float(np.mean(losses))
+    return total / len(starts)
 
 
-def save_plot(history: list[tuple[int, float, float]], path: Path) -> bool:
-    try:
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except ImportError:
-        print("matplotlib not installed; skipping plot")
+def save_plot(history: list[dict[str, float]], path: Path) -> bool:
+    plt = import_pyplot()
+    if plt is None:
         return False
-    steps, train, val = (np.array(col) for col in zip(*history, strict=True))
-    fig, ax = plt.subplots(figsize=(6, 3.4), dpi=110)
-    fig.patch.set_facecolor("#fcfcfb")
-    ax.set_facecolor("#fcfcfb")
-    for values, color, label in ((train, "#2a78d6", "train"), (val, "#eb6834", "validation")):
+    steps = np.array([h["step"] for h in history])
+    fig, ax = plt.subplots(figsize=(6.4, 3.5), dpi=110)
+    fig.patch.set_facecolor(SURFACE)
+    for key, color, label in (("train", SERIES[0], "train"), ("val", SERIES[1], "validation")):
+        values = np.array([h[key] for h in history])
         ax.plot(steps, values, color=color, linewidth=2, label=label)
         ax.annotate(
-            f"{label} {values[-1]:.2f}",
+            f"{label} {values[-1]:.3f}",
             (steps[-1], values[-1]),
             xytext=(6, 0),
             textcoords="offset points",
             va="center",
             fontsize=8,
-            color="#52514e",
+            color=INK_SECONDARY,
         )
-    ax.set_xlabel("step", color="#52514e", fontsize=9)
-    ax.set_ylabel("cross-entropy (nats / char)", color="#52514e", fontsize=9)
-    ax.set_title("Character-level GPT on Shakespeare", color="#0b0b0b", fontsize=10)
-    ax.grid(color="#e8e7e3", linewidth=0.8)
-    ax.tick_params(colors="#52514e", labelsize=8)
-    for spine in ("top", "right"):
-        ax.spines[spine].set_visible(False)
-    for spine in ("left", "bottom"):
-        ax.spines[spine].set_color("#d9d8d4")
-    ax.legend(frameon=False, fontsize=8, labelcolor="#52514e")
-    ax.set_xlim(0, steps[-1] * 1.18)
+    ax.set_xlabel("step", fontsize=9)
+    ax.set_ylabel("cross-entropy (nats / char)", fontsize=9)
+    style_axes(ax)
+    ax.set_title("Character-level GPT on tiny-shakespeare", color=INK, fontsize=10, loc="left")
+    ax.legend(frameon=False, fontsize=8, labelcolor=INK_SECONDARY)
+    ax.set_xlim(0, steps[-1] * 1.2)
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
@@ -121,9 +137,9 @@ def save_plot(history: list[tuple[int, float, float]], path: Path) -> bool:
 
 def main() -> None:
     args = parse_args()
+    retain_freed_memory()  # keep freed activations mapped: saves ~20% of a step (see docs)
     tg.manual_seed(args.seed)
-    rng = np.random.default_rng(args.seed)
-    text = args.corpus.read_text(encoding="utf-8")
+    text, source = load_corpus(args.corpus)
     tok = CharTokenizer(text)
     data = tok.encode(text)
     split = int(0.9 * len(data))
@@ -152,17 +168,27 @@ def main() -> None:
         weight_decay=args.weight_decay,
     )
     sched = optim.CosineWarmupLR(opt, args.warmup, max(args.steps, args.warmup), min_lr_ratio=0.1)
+    # Separate generators: evaluation never changes which batches training sees.
+    train_rng = np.random.default_rng(args.seed)
+    eval_rng = np.random.default_rng(args.seed + 1)
+    n_eval = args.eval_batches * args.batch_size
+    eval_starts = {
+        "train": random_starts(eval_rng, len(train_data), args.block_size, n_eval),
+        "val": random_starts(eval_rng, len(val_data), args.block_size, n_eval),
+    }
+    print(f"corpus: {source}")
     print(
-        f"corpus {len(text)} chars, vocab {tok.vocab_size}, "
-        f"train {len(train_data)} / val {len(val_data)} tokens"
+        f"{len(text):,} chars, vocab {tok.vocab_size}, "
+        f"train {len(train_data):,} / val {len(val_data):,} tokens"
     )
     print(f"GPT {config} -> {model.num_parameters():,} parameters")
 
-    history: list[tuple[int, float, float]] = []
-    start = time.perf_counter()
+    history: list[dict[str, float]] = []
+    start, cpu_start = time.perf_counter(), time.process_time()
     step = 0
     for step in range(1, args.steps + 1):
-        x, y = get_batch(train_data, args.block_size, args.batch_size, rng)
+        starts = random_starts(train_rng, len(train_data), args.block_size, args.batch_size)
+        x, y = windows(train_data, starts, args.block_size)
         loss = tg.cross_entropy(model(x), y)
         opt.zero_grad()
         loss.backward()
@@ -172,26 +198,37 @@ def main() -> None:
         elapsed = time.perf_counter() - start
         out_of_time = args.max_minutes is not None and elapsed > 60 * args.max_minutes
         if step % args.eval_interval == 0 or step == args.steps or out_of_time:
-            train_loss = estimate_loss(model, train_data, args, rng)
-            val_loss = estimate_loss(model, val_data, args, rng)
-            history.append((step, train_loss, val_loss))
+            record = {
+                "step": step,
+                "train": estimate_loss(model, train_data, eval_starts["train"], args),
+                "val": estimate_loss(model, val_data, eval_starts["val"], args),
+                "seconds": elapsed,
+                "cpu_seconds": time.process_time() - cpu_start,
+            }
+            history.append(record)
             print(
-                f"step {step:5d}  train {train_loss:.3f}  val {val_loss:.3f}  "
-                f"lr {sched.get_last_lr()[0]:.2e}  {elapsed:6.1f}s"
+                f"step {step:5d}  train {record['train']:.3f}  val {record['val']:.3f}  "
+                f"lr {sched.get_last_lr()[0]:.2e}  {elapsed:7.1f}s"
             )
         if out_of_time:
             print(f"time budget of {args.max_minutes} min reached")
             break
-    total = time.perf_counter() - start
-    print(f"trained {step} steps in {total:.1f}s ({1000 * total / max(step, 1):.0f} ms/step)")
+    total, cpu = time.perf_counter() - start, time.process_time() - cpu_start
+    print(
+        f"trained {step} steps in {total:.1f}s wall, {cpu:.1f}s CPU "
+        f"({1000 * total / max(step, 1):.0f} ms/step wall, {1000 * cpu / max(step, 1):.0f} CPU)"
+    )
 
     if args.checkpoint is not None:
         save(model, args.checkpoint)
         print(f"saved checkpoint to {args.checkpoint}")
+    if args.history is not None and history:
+        args.history.write_text(json.dumps(history, indent=1))
     if not args.no_plot and history and save_plot(history, args.plot):
         print(f"saved {args.plot}")
 
     prompt = tok.encode(args.prompt)[None, :]
+    begin = time.perf_counter()
     sample = model.generate(
         prompt,
         args.sample_chars,
@@ -199,7 +236,8 @@ def main() -> None:
         top_k=args.top_k,
         rng=np.random.default_rng(args.seed),
     )
-    print("\n--- sample ---")
+    rate = args.sample_chars / (time.perf_counter() - begin)
+    print(f"\n--- sample ({args.sample_chars} chars at {rate:.0f} chars/s, KV cache) ---")
     print(tok.decode(sample[0]))
 
 

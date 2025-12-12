@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import importlib
 import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
@@ -39,18 +41,36 @@ def test_shapes_example() -> None:
 
 def test_char_gpt_example_with_checkpoint(tmp_path: Path) -> None:
     ckpt = tmp_path / "gpt.npz"
-    common = ["--n-layer", "1", "--n-embd", "32", "--block-size", "16", "--batch-size", "8"]
+    # The bundled excerpt keeps the test offline (by default the script downloads).
+    common = [
+        "--corpus", str(EXAMPLES / "data" / "shakespeare.txt"),
+        "--n-layer", "1", "--n-embd", "32", "--block-size", "16", "--batch-size", "8",
+    ]  # fmt: skip
     out = run_example(
         "char_gpt.py", "--steps", "10", "--eval-interval", "5", "--eval-batches", "2",
         "--sample-chars", "40", "--checkpoint", str(ckpt), "--no-plot", *common,
     )  # fmt: skip
-    assert "--- sample ---" in out
+    assert "--- sample (40 chars" in out
     assert ckpt.exists()
     resumed = run_example(
         "char_gpt.py", "--steps", "2", "--eval-interval", "1", "--eval-batches", "1",
         "--sample-chars", "10", "--resume", str(ckpt), "--no-plot", *common,
     )  # fmt: skip
     assert "step     2" in resumed
+
+
+def test_char_gpt_windows_cover_the_last_character(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Regression: starts were drawn from [0, n - T - 1), so the final window was never used
+    # and a corpus of exactly one window (n = T + 1 tokens) raised in rng.integers.
+    monkeypatch.syspath_prepend(str(EXAMPLES))
+    char_gpt = importlib.import_module("char_gpt")
+    rng = np.random.default_rng(0)
+    assert set(char_gpt.random_starts(rng, 9, 8, 50).tolist()) == {0}
+    assert set(char_gpt.random_starts(rng, 10, 8, 200).tolist()) == {0, 1}
+    data = np.arange(10)
+    x, y = char_gpt.windows(data, np.array([1]), 8)
+    assert x.tolist() == [list(range(1, 9))]
+    assert y.tolist() == [list(range(2, 10))]  # the target of the last window is data[-1]
 
 
 def test_newton_example_converges_in_a_few_iterations() -> None:
