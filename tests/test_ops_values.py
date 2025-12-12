@@ -248,6 +248,19 @@ def test_embedding_lookup() -> None:
     assert tg.embedding(np.zeros((2, 0), dtype=np.int64), w).shape == (2, 0, 3)
 
 
+@pytest.mark.parametrize("vocab", [1, 5, 300])
+def test_embedding_gradient_sums_repeated_rows_like_add_at(vocab: int) -> None:
+    rng = np.random.default_rng(vocab)
+    ids = rng.integers(0, vocab, size=(7, 11))
+    w = tg.Tensor(rng.standard_normal((vocab, 3)), requires_grad=True)
+    g = rng.standard_normal((7, 11, 3))
+    tg.embedding(ids, w).backward(g)
+    expected = np.zeros((vocab, 3))
+    np.add.at(expected, ids.reshape(-1), g.reshape(-1, 3))
+    assert w.grad is not None
+    np.testing.assert_allclose(w.grad.data, expected, rtol=1e-12, atol=1e-12)
+
+
 @pytest.mark.parametrize("bad_id", [-1, 4])
 def test_embedding_rejects_out_of_range_ids(bad_id: int) -> None:
     # Regression: id -1 silently returned the last row (NumPy's negative indexing).
