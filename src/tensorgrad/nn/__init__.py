@@ -20,12 +20,16 @@ from tensorgrad.nn.layers import (
     Tanh,
 )
 from tensorgrad.nn.module import IncompatibleKeys, Module, Parameter
+from tensorgrad.nn.recurrent import GRU, LSTM, RNN
 from tensorgrad.nn.transformer import GPT, GPTConfig, KVCache, TransformerBlock
 
 __all__ = [
     "GELU",
     "GPT",
+    "GRU",
+    "LSTM",
     "MLP",
+    "RNN",
     "BatchNorm1d",
     "Conv2d",
     "Dropout",

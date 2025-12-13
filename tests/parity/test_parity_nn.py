@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from typing import Any
 
 import numpy as np
 import pytest
@@ -283,3 +284,52 @@ def test_gpt_with_tied_embeddings() -> None:
             lambda z: F.cross_entropy(z.permute(0, 2, 1), torch.from_numpy(targets)),
         ),
     )
+
+
+def flatten_outputs(output: Any, state: Any, cat: Callable[..., Any]) -> Any:
+    """A recurrent module's output and final state(s) as one flat tensor."""
+    states = state if isinstance(state, tuple) else (state,)
+    return cat([t.reshape(-1) for t in (output, *states)])
+
+
+RECURRENT = [("RNN", {}), ("RNN", {"nonlinearity": "relu"}), ("LSTM", {}), ("GRU", {})]
+
+
+@pytest.mark.parametrize(("name", "kwargs"), RECURRENT, ids=["rnn", "rnn_relu", "lstm", "gru"])
+@pytest.mark.parametrize("batch_first", [False, True])
+@pytest.mark.parametrize("bias", [True, False])
+def test_recurrent_layers(name: str, kwargs: dict[str, Any], batch_first: bool, bias: bool) -> None:
+    options = {"num_layers": 2, "bias": bias, "batch_first": batch_first, **kwargs}
+    ours = getattr(nn, name)(3, 4, **options)
+    theirs = getattr(torch.nn, name)(3, 4, **options).double()
+    reference = dict(theirs.named_parameters())
+    assert list(reference) == [n for n, _ in ours.named_parameters()]
+    pairs = [(p, reference[n]) for n, p in ours.named_parameters()]
+    x = np.random.default_rng(8).standard_normal((5, 2, 3))
+    check_module(
+        lambda x: flatten_outputs(*ours(x), tg.concat),  # type: ignore[arg-type]
+        lambda x: flatten_outputs(*theirs(x), torch.cat),
+        pairs,
+        x,
+    )
+
+
+@pytest.mark.parametrize("name", ["RNN", "LSTM", "GRU"])
+def test_recurrent_initial_state_gradients(name: str) -> None:
+    ours, theirs = getattr(nn, name)(3, 4, num_layers=2), getattr(torch.nn, name)(3, 4, 2).double()
+    copy_weights([(p, dict(theirs.named_parameters())[n]) for n, p in ours.named_parameters()])
+    rng = np.random.default_rng(9)
+    x = rng.standard_normal((6, 2, 3))
+    states = [rng.standard_normal((2, 2, 4)) for _ in range(2 if name == "LSTM" else 1)]
+    s_ours = [tg.Tensor(s, requires_grad=True) for s in states]
+    s_theirs = [torch.tensor(s, requires_grad=True) for s in states]
+    hx_ours = tuple(s_ours) if name == "LSTM" else s_ours[0]
+    hx_theirs = tuple(s_theirs) if name == "LSTM" else s_theirs[0]
+    out_ours = flatten_outputs(*ours(tg.Tensor(x), hx_ours), tg.concat)
+    out_theirs = flatten_outputs(*theirs(torch.tensor(x), hx_theirs), torch.cat)
+    assert_close(out_ours, out_theirs, "output")
+    v = rng.standard_normal(out_ours.shape)
+    g_ours = tg.autograd.grad((out_ours * v).sum(), s_ours)
+    g_theirs = torch.autograd.grad((out_theirs * torch.tensor(v)).sum(), s_theirs)
+    for a, b in zip(g_ours, g_theirs, strict=True):
+        assert_close(a, b, "initial-state gradient")

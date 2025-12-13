@@ -23,6 +23,7 @@ from tensorgrad.ops.elementwise import (
 from tensorgrad.ops.layers import batch_norm, dropout, embedding, layer_norm, linear
 from tensorgrad.ops.linalg import matmul
 from tensorgrad.ops.loss import binary_cross_entropy_with_logits, cross_entropy, mse_loss
+from tensorgrad.ops.recurrent import gru, lstm, rnn
 from tensorgrad.ops.reduce import max, mean, min, sum, var
 from tensorgrad.ops.shape import (
     broadcast_to,
@@ -56,11 +57,13 @@ __all__ = [
     "flatten",
     "gelu",
     "getitem",
+    "gru",
     "layer_norm",
     "linear",
     "log",
     "log_softmax",
     "logsumexp",
+    "lstm",
     "masked_fill",
     "matmul",
     "max",
@@ -74,6 +77,7 @@ __all__ = [
     "pow",
     "relu",
     "reshape",
+    "rnn",
     "sigmoid",
     "softmax",
     "sqrt",
