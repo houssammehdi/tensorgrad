@@ -153,17 +153,18 @@ def batch_norm(
     momentum: float = 0.1,
     eps: float = 1e-5,
 ) -> Tensor:
-    """Batch normalisation for ``(N, C)`` or ``(N, C, L)`` input (statistics per channel).
+    """Batch normalisation over ``(N, C, *spatial)`` input, with statistics per channel.
 
-    In training mode the batch statistics are used and the running estimates (if given) are
-    updated in place with ``momentum``, using the unbiased batch variance as PyTorch does. In
-    evaluation mode the running estimates are used instead. Built from primitive ops, so the
-    backward pass comes for free from the graph.
+    Covers ``(N, C)`` and ``(N, C, L)`` (``BatchNorm1d``) and ``(N, C, H, W)``
+    (``BatchNorm2d``) input. In training mode the batch statistics are used and the running
+    estimates (if given) are updated in place with ``momentum``, using the unbiased batch
+    variance as PyTorch does. In evaluation mode the running estimates are used instead.
+    Built from primitive ops, so the backward pass (of any order) comes from the graph.
     """
-    if x.ndim not in (2, 3):
-        raise ValueError(f"batch_norm expects (N, C) or (N, C, L) input, got {x.shape}")
-    axes = (0,) if x.ndim == 2 else (0, 2)
-    view = (1, -1) if x.ndim == 2 else (1, -1, 1)
+    if x.ndim < 2:
+        raise ValueError(f"batch_norm expects (N, C, ...) input, got {x.shape}")
+    axes = (0, *range(2, x.ndim))
+    view = (1, -1, *([1] * (x.ndim - 2)))
     if training:
         mean = reduce.mean(x, axes, keepdims=True)
         var = reduce.var(x, axes, keepdims=True, correction=0)

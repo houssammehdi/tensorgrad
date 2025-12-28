@@ -19,6 +19,7 @@ __all__ = [
     "GELU",
     "MLP",
     "BatchNorm1d",
+    "BatchNorm2d",
     "Conv2d",
     "Dropout",
     "Embedding",
@@ -151,8 +152,8 @@ class LayerNorm(Module):
         return f"{self.normalized_shape}, eps={self.eps}"
 
 
-class BatchNorm1d(Module):
-    """Batch normalisation over ``(N, C)`` or ``(N, C, L)`` input.
+class _BatchNorm(Module):
+    """Batch normalisation with learnable scale and shift and running statistics.
 
     Keeps ``running_mean`` / ``running_var`` buffers (exponential moving averages with
     ``momentum``) that replace the batch statistics in evaluation mode.
@@ -160,6 +161,8 @@ class BatchNorm1d(Module):
 
     running_mean: Array
     running_var: Array
+    _layouts: tuple[int, ...] = ()  # accepted input ranks
+    _layout_names = ""
 
     def __init__(
         self, num_features: int, eps: float = 1e-5, momentum: float = 0.1, affine: bool = True
@@ -177,8 +180,11 @@ class BatchNorm1d(Module):
         self.register_buffer("running_var", np.ones(num_features, dtype=get_default_dtype()))
 
     def forward(self, x: Tensor) -> Tensor:
-        if x.ndim not in (2, 3) or x.shape[1] != self.num_features:
-            raise ValueError(f"expected (N, {self.num_features}[, L]) input, got {x.shape}")
+        if x.ndim not in self._layouts or x.shape[1] != self.num_features:
+            raise ValueError(
+                f"{type(self).__name__}({self.num_features}) expects "
+                f"{self._layout_names} input, got {x.shape}"
+            )
         return ops.batch_norm(
             x,
             self.running_mean,
@@ -192,6 +198,20 @@ class BatchNorm1d(Module):
 
     def extra_repr(self) -> str:
         return f"{self.num_features}, eps={self.eps}, momentum={self.momentum}"
+
+
+class BatchNorm1d(_BatchNorm):
+    """Batch normalisation over ``(N, C)`` or ``(N, C, L)`` input (statistics per channel)."""
+
+    _layouts = (2, 3)
+    _layout_names = "(N, C) or (N, C, L)"
+
+
+class BatchNorm2d(_BatchNorm):
+    """Batch normalisation over ``(N, C, H, W)`` input (statistics per channel)."""
+
+    _layouts = (4,)
+    _layout_names = "(N, C, H, W)"
 
 
 class Dropout(Module):

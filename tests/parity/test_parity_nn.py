@@ -159,9 +159,11 @@ def test_layer_norm() -> None:
     check_module(ours, theirs, [(ours.weight, theirs.weight), (ours.bias, theirs.bias)], x)
 
 
-@pytest.mark.parametrize("shape", [(8, 3), (4, 3, 5)])
-def test_batch_norm_1d_training_and_evaluation(shape: tuple[int, ...]) -> None:
-    ours, theirs = nn.BatchNorm1d(3, momentum=0.3), torch.nn.BatchNorm1d(3, momentum=0.3).double()
+@pytest.mark.parametrize("shape", [(8, 3), (4, 3, 5), (4, 3, 5, 5)])
+def test_batch_norm_training_and_evaluation(shape: tuple[int, ...]) -> None:
+    kind = "BatchNorm2d" if len(shape) == 4 else "BatchNorm1d"
+    ours = getattr(nn, kind)(3, momentum=0.3)
+    theirs = getattr(torch.nn, kind)(3, momentum=0.3).double()
     ours.weight.data[...] = [0.5, 1.0, 2.0]
     pairs = [(ours.weight, theirs.weight), (ours.bias, theirs.bias)]
     rng = np.random.default_rng(4)

@@ -160,6 +160,21 @@ class TestLayers:
         seq = nn.BatchNorm1d(3)(tg.randn((4, 3, 5)))  # (N, C, L) input
         assert seq.shape == (4, 3, 5)
 
+    def test_batchnorm2d_normalises_each_channel_over_batch_and_space(self) -> None:
+        bn = nn.BatchNorm2d(2)
+        data = np.random.default_rng(0).standard_normal((4, 2, 3, 5)) * [[[[2.0]], [[5.0]]]] + 3
+        out = bn(tg.Tensor(data.astype(np.float32))).data
+        np.testing.assert_allclose(out.mean(axis=(0, 2, 3)), 0.0, atol=1e-5)
+        np.testing.assert_allclose(out.var(axis=(0, 2, 3)), 1.0, rtol=1e-3)
+        n = 4 * 3 * 5
+        np.testing.assert_allclose(bn.running_mean, 0.1 * data.mean(axis=(0, 2, 3)), rtol=1e-5)
+        unbiased = data.var(axis=(0, 2, 3)) * n / (n - 1)
+        np.testing.assert_allclose(bn.running_var, 0.9 + 0.1 * unbiased, rtol=1e-5)
+        with pytest.raises(ValueError, match=r"BatchNorm2d\(2\) expects \(N, C, H, W\)"):
+            bn(tg.randn((4, 2, 3)))
+        with pytest.raises(ValueError, match="BatchNorm1d"):
+            nn.BatchNorm1d(2)(tg.randn((4, 2, 3, 3)))
+
     def test_dropout_module_respects_mode(self) -> None:
         drop = nn.Dropout(0.5)
         x = tg.ones((1000,))

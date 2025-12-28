@@ -383,7 +383,7 @@ def test_layer_norm(rng: np.random.Generator, affine: bool) -> None:
         assert check_gradients(tg.layer_norm, [x])
 
 
-@pytest.mark.parametrize("shape", [(6, 3), (4, 3, 5)])
+@pytest.mark.parametrize("shape", [(6, 3), (4, 3, 5), (3, 3, 2, 2)])
 def test_batch_norm_training(rng: np.random.Generator, shape: tuple[int, ...]) -> None:
     x, w, b = leaf(rng, *shape), leaf(rng, 3), leaf(rng, 3)
     fn = lambda *ts: tg.ops.batch_norm(ts[0], None, None, ts[1], ts[2], training=True)
