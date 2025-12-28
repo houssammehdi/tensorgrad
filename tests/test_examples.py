@@ -88,7 +88,19 @@ def test_maml_example_runs_all_three_methods() -> None:
         assert any(line.startswith(method + " ") for line in out.splitlines()), method
 
 
-@pytest.mark.parametrize("script", ["spiral_mlp.py", "shapes_cnn.py", "char_gpt.py"])
+def test_adding_problem_example_runs_every_cell() -> None:
+    out = run_example(
+        "adding_problem.py", "--length", "12", "--steps", "20", "--eval-interval", "10",
+        "--test-size", "64", "--hidden", "8", "--no-plot",
+    )  # fmt: skip
+    for name in ("RNN", "GRU", "LSTM"):
+        assert any(line.startswith(f"{name} ") and "test MSE" in line for line in out.splitlines())
+
+
+@pytest.mark.parametrize(
+    "script",
+    ["spiral_mlp.py", "shapes_cnn.py", "char_gpt.py", "adding_problem.py"],
+)
 def test_examples_expose_epochs_or_steps_and_seed(script: str) -> None:
     help_text = run_example(script, "--help")
     assert "--seed" in help_text
