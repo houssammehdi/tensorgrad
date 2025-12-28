@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, ParamSpec, TypeAlias, TypeVar
 
 import numpy as np
 
+from tensorgrad import profiler as _profiler
 from tensorgrad._types import Array
 
 if TYPE_CHECKING:
@@ -238,6 +239,31 @@ def _run_backward(
     node frees its saved state. With ``create_graph`` the seeds are tensors and every VJP is
     built from differentiable ops (grad mode on), so the returned gradients have a graph.
     """
+    prof = _profiler.active()
+    if prof is None:
+        return _backward_pass(roots, seeds, retain_graph, create_graph, targets, None)
+    return prof.timed(
+        _profiler.ENGINE,
+        True,
+        _backward_pass,
+        roots,
+        seeds,
+        retain_graph,
+        create_graph,
+        targets,
+        prof,
+    )
+
+
+def _backward_pass(
+    roots: Sequence[Tensor],
+    seeds: Sequence[GradValue],
+    retain_graph: bool,
+    create_graph: bool,
+    targets: Sequence[Tensor] | None,
+    prof: _profiler.Profile | None,
+) -> dict[int, GradValue]:
+    """The body of :func:`_run_backward`; VJP calls are timed when ``prof`` is given."""
     order = _topological_order(roots)
     target_ids = None if targets is None else {id(t) for t in targets}
     live = None if target_ids is None else _leads_to(order, target_ids)
@@ -271,14 +297,16 @@ def _run_backward(
                 need = tuple([p._requires_grad and id(p) in live for p in parents])
             if not any(need):
                 continue
+            parent_grads: tuple[GradValue | None, ...]
             if create_graph:
-                parent_grads: tuple[GradValue | None, ...] = node.apply_graph(
-                    g,  # type: ignore[arg-type]
-                    tensor,
-                    need,
-                )
-            else:
+                if prof is None:
+                    parent_grads = node.apply_graph(g, tensor, need)  # type: ignore[arg-type]
+                else:
+                    parent_grads = prof.timed(node.op, True, node.apply_graph, g, tensor, need)  # type: ignore[arg-type]
+            elif prof is None:
                 parent_grads = backward_fn(g, need)  # type: ignore[arg-type]
+            else:
+                parent_grads = prof.timed(node.op, True, backward_fn, g, need)  # type: ignore[arg-type]
             if len(parent_grads) != len(parents):
                 raise RuntimeError(
                     f"op '{node.op}' returned {len(parent_grads)} gradients "

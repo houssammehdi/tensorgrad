@@ -12,6 +12,7 @@ from tensorgrad.ops._util import as_tensor, coerce_pair, make_result
 from tensorgrad.ops.activation import _log_softmax_array, softmax
 from tensorgrad.ops.elementwise import sigmoid
 from tensorgrad.ops.shape import broadcast_to, reshape
+from tensorgrad.profiler import profiled
 from tensorgrad.tensor import Tensor, TensorLike
 
 __all__ = ["Reduction", "binary_cross_entropy_with_logits", "cross_entropy", "mse_loss"]
@@ -19,6 +20,7 @@ __all__ = ["Reduction", "binary_cross_entropy_with_logits", "cross_entropy", "ms
 Reduction = Literal["mean", "sum", "none"]
 
 
+@profiled("cross_entropy")
 def cross_entropy(
     logits: TensorLike,
     target: Tensor | Array,
@@ -95,6 +97,7 @@ def cross_entropy(
     return make_result(out, (tl,), backward, "cross_entropy", graph=graph)
 
 
+@profiled("binary_cross_entropy")
 def binary_cross_entropy_with_logits(
     logits: TensorLike, target: TensorLike, *, reduction: Reduction = "mean"
 ) -> Tensor:
@@ -142,6 +145,7 @@ def binary_cross_entropy_with_logits(
     return make_result(out, (tz, ty), backward, "binary_cross_entropy", graph=graph)
 
 
+@profiled("mse_loss")
 def mse_loss(
     prediction: TensorLike, target: TensorLike, *, reduction: Reduction = "mean"
 ) -> Tensor:

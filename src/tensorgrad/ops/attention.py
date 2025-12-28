@@ -29,6 +29,7 @@ from tensorgrad._random import get_rng, keep_mask
 from tensorgrad._types import Array
 from tensorgrad.ops import activation, shape
 from tensorgrad.ops._util import as_tensor, make_result, unbroadcast
+from tensorgrad.profiler import profiled
 from tensorgrad.tensor import Tensor, TensorLike
 
 __all__ = ["causal_mask", "packed_self_attention", "scaled_dot_product_attention"]
@@ -159,6 +160,7 @@ def attention_backward_graph(
 
 
 # ------------------------------------------------------------------ differentiable ops
+@profiled("attention")
 def scaled_dot_product_attention(
     q: TensorLike,
     k: TensorLike,
@@ -218,6 +220,7 @@ def _split_heads(qkv: Array, num_heads: int) -> tuple[Array, Array, Array]:
     return tuple(parts[:, :, i].transpose(0, 2, 1, 3) for i in range(3))  # type: ignore[return-value]
 
 
+@profiled("self_attention")
 def packed_self_attention(
     qkv: TensorLike,
     num_heads: int,

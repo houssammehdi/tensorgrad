@@ -8,6 +8,7 @@ from tensorgrad._types import Array
 from tensorgrad.ops._util import as_tensor, make_result, normalize_axis
 from tensorgrad.ops.elementwise import exp
 from tensorgrad.ops.shape import unsqueeze
+from tensorgrad.profiler import profiled
 from tensorgrad.tensor import Tensor, TensorLike
 
 __all__ = ["log_softmax", "logsumexp", "softmax"]
@@ -23,6 +24,7 @@ def _shifted(x: Array, axis: int) -> Array:
     return x - m
 
 
+@profiled("softmax")
 def softmax(a: TensorLike, axis: int = -1) -> Tensor:
     """``exp(x) / sum(exp(x))`` along ``axis``.
 
@@ -50,6 +52,7 @@ def _log_softmax_array(x: Array, axis: int) -> Array:
     return out
 
 
+@profiled("log_softmax")
 def log_softmax(a: TensorLike, axis: int = -1) -> Tensor:
     """``x - logsumexp(x)`` along ``axis``, computed with the max-shift trick.
 
@@ -69,6 +72,7 @@ def log_softmax(a: TensorLike, axis: int = -1) -> Tensor:
     return make_result(out, (ta,), backward, "log_softmax", graph=graph)
 
 
+@profiled("logsumexp")
 def logsumexp(a: TensorLike, axis: int = -1, keepdims: bool = False) -> Tensor:
     """Stable ``log(sum(exp(x)))`` along ``axis``; its gradient is ``softmax(x)``."""
     ta = as_tensor(a)

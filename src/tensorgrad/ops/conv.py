@@ -22,6 +22,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 from tensorgrad._types import Array
 from tensorgrad.ops._util import as_tensor, make_result
 from tensorgrad.ops.shape import _scatter_add, reshape
+from tensorgrad.profiler import profiled
 from tensorgrad.tensor import Tensor, TensorLike
 
 __all__ = ["conv2d", "conv2d_input_grad", "conv2d_weight_grad", "im2col", "max_pool2d"]
@@ -122,6 +123,7 @@ def _check_conv_args(x: Tensor, w: Tensor, stride: IntPair, padding: IntPair) ->
 
 
 # ------------------------------------------------------------------ differentiable ops
+@profiled("conv2d")
 def conv2d(
     x: TensorLike,
     weight: TensorLike,
@@ -173,6 +175,7 @@ def conv2d(
     return make_result(out, parents, backward, "conv2d", graph=graph)
 
 
+@profiled("conv2d_input_grad")
 def conv2d_input_grad(
     grad_output: TensorLike,
     weight: TensorLike,
@@ -208,6 +211,7 @@ def conv2d_input_grad(
     return make_result(out, (tg_, tw), backward, "conv2d_input_grad", graph=graph)
 
 
+@profiled("conv2d_weight_grad")
 def conv2d_weight_grad(
     x: TensorLike,
     grad_output: TensorLike,
@@ -256,6 +260,7 @@ def _winner_positions(winner: Array, kw: int, stride: Pair, padded: tuple[int, .
     return positions
 
 
+@profiled("max_pool2d")
 def max_pool2d(
     x: TensorLike,
     kernel_size: IntPair,

@@ -11,6 +11,7 @@ from tensorgrad.ops import elementwise, reduce
 from tensorgrad.ops._util import as_tensor, make_result
 from tensorgrad.ops.linalg import matmul
 from tensorgrad.ops.shape import _scatter_add, reshape, transpose
+from tensorgrad.profiler import profiled
 from tensorgrad.tensor import Tensor, TensorLike
 
 __all__ = ["batch_norm", "dropout", "embedding", "layer_norm", "linear"]
@@ -18,6 +19,7 @@ __all__ = ["batch_norm", "dropout", "embedding", "layer_norm", "linear"]
 Need = tuple[bool, ...]
 
 
+@profiled("linear")
 def linear(x: TensorLike, weight: TensorLike, bias: TensorLike | None = None) -> Tensor:
     """``x @ weight.T + bias`` for ``x`` of shape ``(*, in)`` and ``weight`` ``(out, in)``.
 
@@ -60,6 +62,7 @@ def linear(x: TensorLike, weight: TensorLike, bias: TensorLike | None = None) ->
     return make_result(out, parents, backward, "linear", graph=graph)
 
 
+@profiled("layer_norm")
 def layer_norm(
     x: TensorLike,
     weight: TensorLike | None = None,
@@ -138,6 +141,7 @@ def layer_norm(
     return make_result(out, parents, backward, "layer_norm", graph=graph)
 
 
+@profiled("batch_norm")
 def batch_norm(
     x: Tensor,
     running_mean: Array | None,
@@ -201,6 +205,7 @@ def _sum_rows(ids: Array, rows: Array, num: int) -> Array:
     return out
 
 
+@profiled("embedding")
 def embedding(indices: Tensor | Array, weight: TensorLike) -> Tensor:
     """Look up rows of ``weight`` (``(num_embeddings, dim)``) for integer ``indices``.
 
@@ -226,6 +231,7 @@ def embedding(indices: Tensor | Array, weight: TensorLike) -> Tensor:
     return make_result(out, (tw,), backward, "embedding", graph=graph)
 
 
+@profiled("dropout")
 def dropout(
     x: TensorLike, p: float = 0.5, training: bool = True, rng: np.random.Generator | None = None
 ) -> Tensor:

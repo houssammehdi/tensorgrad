@@ -7,11 +7,13 @@ import numpy as np
 from tensorgrad._types import Array
 from tensorgrad.ops._util import coerce_pair, make_result, unbroadcast
 from tensorgrad.ops.shape import reshape, sum_to, transpose
+from tensorgrad.profiler import profiled
 from tensorgrad.tensor import Tensor, TensorLike
 
 __all__ = ["matmul"]
 
 
+@profiled("matmul")
 def matmul(a: TensorLike, b: TensorLike) -> Tensor:
     """Matrix product with :func:`numpy.matmul` semantics.
 

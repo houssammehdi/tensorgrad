@@ -20,6 +20,7 @@ from tensorgrad.ops._util import (
     normalize_axis,
     unbroadcast,
 )
+from tensorgrad.profiler import profiled
 from tensorgrad.tensor import IndexLike, Tensor, TensorLike
 
 __all__ = [
@@ -41,6 +42,7 @@ __all__ = [
 Need = tuple[bool, ...]
 
 
+@profiled("reshape")
 def reshape(a: TensorLike, shape: Sequence[int]) -> Tensor:
     """Return the same elements with a new shape (one entry may be ``-1``)."""
     ta = as_tensor(a)
@@ -54,6 +56,7 @@ def reshape(a: TensorLike, shape: Sequence[int]) -> Tensor:
     return make_result(ta.data.reshape(tuple(shape)), (ta,), backward, "reshape", graph=graph)
 
 
+@profiled("permute")
 def permute(a: TensorLike, dims: Sequence[int]) -> Tensor:
     """Reorder the axes of ``a`` so that output axis ``i`` is input axis ``dims[i]``."""
     ta = as_tensor(a)
@@ -71,6 +74,7 @@ def permute(a: TensorLike, dims: Sequence[int]) -> Tensor:
     return make_result(ta.data.transpose(order), (ta,), backward, "permute", graph=graph)
 
 
+@profiled("transpose")
 def transpose(a: TensorLike, axis0: int, axis1: int) -> Tensor:
     """Swap two axes of ``a``."""
     ta = as_tensor(a)
@@ -80,6 +84,7 @@ def transpose(a: TensorLike, axis0: int, axis1: int) -> Tensor:
     return permute(ta, order)
 
 
+@profiled("unsqueeze")
 def unsqueeze(a: TensorLike, axis: int) -> Tensor:
     """Insert a size-1 axis at position ``axis``."""
     ta = as_tensor(a)
@@ -87,6 +92,7 @@ def unsqueeze(a: TensorLike, axis: int) -> Tensor:
     return reshape(ta, (*ta.shape[:pos], 1, *ta.shape[pos:]))
 
 
+@profiled("squeeze")
 def squeeze(a: TensorLike, axis: int | None = None) -> Tensor:
     """Remove size-1 axes (only ``axis`` if given; a no-op if that axis is not size 1)."""
     ta = as_tensor(a)
@@ -98,6 +104,7 @@ def squeeze(a: TensorLike, axis: int | None = None) -> Tensor:
     return reshape(ta, shape)
 
 
+@profiled("flatten")
 def flatten(a: TensorLike, start_axis: int = 0, end_axis: int = -1) -> Tensor:
     """Merge axes ``start_axis`` through ``end_axis`` (inclusive) into one."""
     ta = as_tensor(a)
@@ -110,6 +117,7 @@ def flatten(a: TensorLike, start_axis: int = 0, end_axis: int = -1) -> Tensor:
     return reshape(ta, (*ta.shape[:start], merged, *ta.shape[end + 1 :]))
 
 
+@profiled("broadcast_to")
 def broadcast_to(a: TensorLike, shape: Sequence[int]) -> Tensor:
     """Broadcast ``a`` to ``shape`` with NumPy rules (the result is a read-only view).
 
@@ -131,6 +139,7 @@ def broadcast_to(a: TensorLike, shape: Sequence[int]) -> Tensor:
     return make_result(data, (ta,), backward, "broadcast_to", graph=graph)
 
 
+@profiled("sum_to")
 def sum_to(a: TensorLike, shape: Sequence[int]) -> Tensor:
     """Sum ``a`` down to ``shape``, the adjoint of broadcasting ``shape`` up to ``a.shape``.
 
@@ -214,6 +223,7 @@ def _scatter_add(
     return make_result(data, (tv,), backward, "scatter_add", graph=graph)
 
 
+@profiled("getitem")
 def getitem(a: TensorLike, index: IndexLike) -> Tensor:
     """NumPy-style indexing: basic slicing plus integer and boolean array indexing.
 
@@ -225,6 +235,7 @@ def getitem(a: TensorLike, index: IndexLike) -> Tensor:
     return _gather(as_tensor(a), idx, advanced)
 
 
+@profiled("concat")
 def concat(tensors: Sequence[TensorLike], axis: int = 0) -> Tensor:
     """Join tensors along an existing axis."""
     if not tensors:
@@ -251,6 +262,7 @@ def concat(tensors: Sequence[TensorLike], axis: int = 0) -> Tensor:
     return make_result(data, tuple(ts), backward, "concat", graph=graph)
 
 
+@profiled("stack")
 def stack(tensors: Sequence[TensorLike], axis: int = 0) -> Tensor:
     """Join equally shaped tensors along a new axis."""
     if not tensors:
@@ -274,6 +286,7 @@ def _mask_array(mask: Tensor | Array | bool) -> Array:
     return arr.astype(np.bool_, copy=False)
 
 
+@profiled("where")
 def where(condition: Tensor | Array | bool, a: TensorLike, b: TensorLike) -> Tensor:
     """Pick elements from ``a`` where ``condition`` is true and from ``b`` elsewhere."""
     cond = _mask_array(condition)
@@ -295,6 +308,7 @@ def where(condition: Tensor | Array | bool, a: TensorLike, b: TensorLike) -> Ten
     return make_result(np.where(cond, ta.data, tb.data), (ta, tb), backward, "where", graph=graph)
 
 
+@profiled("masked_fill")
 def masked_fill(a: TensorLike, mask: Tensor | Array, value: float) -> Tensor:
     """Replace entries of ``a`` where ``mask`` (broadcastable to ``a``) is true by ``value``.
 

@@ -27,6 +27,7 @@ from tensorgrad.ops._util import as_tensor, make_result
 from tensorgrad.ops.elementwise import relu, sigmoid, sigmoid_array, tanh
 from tensorgrad.ops.layers import linear
 from tensorgrad.ops.linalg import matmul
+from tensorgrad.profiler import profiled
 from tensorgrad.tensor import Tensor, TensorLike
 
 __all__ = ["gru", "lstm", "rnn"]
@@ -136,6 +137,7 @@ def _projection_graph(x: Tensor, w_ih: Tensor, biases: Sequence[Tensor]) -> Tens
 
 
 # --------------------------------------------------------------------------- Elman RNN
+@profiled("rnn")
 def rnn(
     x: TensorLike,
     h0: TensorLike,
@@ -218,6 +220,7 @@ def rnn(
 
 
 # --------------------------------------------------------------------------- LSTM
+@profiled("lstm")
 def lstm(
     x: TensorLike,
     h0: TensorLike,
@@ -330,6 +333,7 @@ def lstm(
 
 
 # --------------------------------------------------------------------------- GRU
+@profiled("gru")
 def gru(
     x: TensorLike,
     h0: TensorLike,

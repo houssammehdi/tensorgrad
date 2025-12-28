@@ -10,6 +10,7 @@ import numpy as np
 from tensorgrad._types import Array, Axis
 from tensorgrad.ops._util import as_tensor, expand_reduced, make_result, normalize_axes
 from tensorgrad.ops.shape import broadcast_to, reshape
+from tensorgrad.profiler import profiled
 from tensorgrad.tensor import Tensor, TensorLike
 
 __all__ = ["max", "mean", "min", "sum", "var"]
@@ -28,6 +29,7 @@ def _drop_axes(kept: Array, axes: tuple[int, ...], keepdims: bool) -> Array:
     return kept if keepdims else np.squeeze(kept, axis=axes)
 
 
+@profiled("sum")
 def sum(a: TensorLike, axis: Axis = None, keepdims: bool = False) -> Tensor:
     """Sum over ``axis`` (all axes when ``None``)."""
     ta = as_tensor(a)
@@ -50,6 +52,7 @@ def _count(shape: tuple[int, ...], axes: tuple[int, ...]) -> int:
     return count
 
 
+@profiled("mean")
 def mean(a: TensorLike, axis: Axis = None, keepdims: bool = False) -> Tensor:
     """Arithmetic mean over ``axis``."""
     ta = as_tensor(a)
@@ -90,16 +93,19 @@ def _extremum(
     return make_result(np.asarray(out), (ta,), backward, op, graph=graph)
 
 
+@profiled("max")
 def max(a: TensorLike, axis: Axis = None, keepdims: bool = False) -> Tensor:
     """Maximum over ``axis``; tied maxima share the gradient equally."""
     return _extremum(a, axis, keepdims, np.max, "max")
 
 
+@profiled("min")
 def min(a: TensorLike, axis: Axis = None, keepdims: bool = False) -> Tensor:
     """Minimum over ``axis``; tied minima share the gradient equally."""
     return _extremum(a, axis, keepdims, np.min, "min")
 
 
+@profiled("var")
 def var(a: TensorLike, axis: Axis = None, keepdims: bool = False, correction: int = 1) -> Tensor:
     """Variance over ``axis``: ``sum((x - mean)**2) / (N - correction)``.
 

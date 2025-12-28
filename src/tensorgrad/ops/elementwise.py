@@ -15,6 +15,7 @@ import numpy as np
 from tensorgrad._types import Array, DTypeLike
 from tensorgrad.ops._util import as_tensor, coerce_pair, make_result, unbroadcast
 from tensorgrad.ops.shape import sum_to, where
+from tensorgrad.profiler import profiled
 from tensorgrad.tensor import Tensor, TensorLike
 
 __all__ = [
@@ -39,6 +40,7 @@ Pair = tuple[Array | None, Array | None]
 TensorPair = tuple[Tensor | None, Tensor | None]
 
 
+@profiled("add")
 def add(a: TensorLike, b: TensorLike) -> Tensor:
     """``a + b`` with NumPy broadcasting."""
     ta, tb = coerce_pair(a, b)
@@ -58,6 +60,7 @@ def add(a: TensorLike, b: TensorLike) -> Tensor:
     return make_result(ta.data + tb.data, (ta, tb), backward, "add", graph=graph)
 
 
+@profiled("sub")
 def sub(a: TensorLike, b: TensorLike) -> Tensor:
     """``a - b`` with NumPy broadcasting."""
     ta, tb = coerce_pair(a, b)
@@ -77,6 +80,7 @@ def sub(a: TensorLike, b: TensorLike) -> Tensor:
     return make_result(ta.data - tb.data, (ta, tb), backward, "sub", graph=graph)
 
 
+@profiled("mul")
 def mul(a: TensorLike, b: TensorLike) -> Tensor:
     """``a * b`` with NumPy broadcasting."""
     ta, tb = coerce_pair(a, b)
@@ -96,6 +100,7 @@ def mul(a: TensorLike, b: TensorLike) -> Tensor:
     return make_result(ta.data * tb.data, (ta, tb), backward, "mul", graph=graph)
 
 
+@profiled("div")
 def div(a: TensorLike, b: TensorLike) -> Tensor:
     """``a / b`` with NumPy broadcasting."""
     ta, tb = coerce_pair(a, b)
@@ -116,6 +121,7 @@ def div(a: TensorLike, b: TensorLike) -> Tensor:
     return make_result(out, (ta, tb), backward, "div", graph=graph)
 
 
+@profiled("neg")
 def neg(a: TensorLike) -> Tensor:
     """``-a``."""
     ta = as_tensor(a)
@@ -129,6 +135,7 @@ def neg(a: TensorLike) -> Tensor:
     return make_result(-ta.data, (ta,), backward, "neg", graph=graph)
 
 
+@profiled("pow")
 def pow(base: TensorLike, exponent: TensorLike) -> Tensor:
     """``base ** exponent``.
 
@@ -161,6 +168,7 @@ def pow(base: TensorLike, exponent: TensorLike) -> Tensor:
     return make_result(out, (tb, te), backward, "pow", graph=graph)
 
 
+@profiled("exp")
 def exp(a: TensorLike) -> Tensor:
     """Elementwise ``e**a``."""
     ta = as_tensor(a)
@@ -175,6 +183,7 @@ def exp(a: TensorLike) -> Tensor:
     return make_result(out, (ta,), backward, "exp", graph=graph)
 
 
+@profiled("log")
 def log(a: TensorLike) -> Tensor:
     """Elementwise natural logarithm."""
     ta = as_tensor(a)
@@ -188,6 +197,7 @@ def log(a: TensorLike) -> Tensor:
     return make_result(np.log(ta.data), (ta,), backward, "log", graph=graph)
 
 
+@profiled("sqrt")
 def sqrt(a: TensorLike) -> Tensor:
     """Elementwise square root."""
     ta = as_tensor(a)
@@ -202,6 +212,7 @@ def sqrt(a: TensorLike) -> Tensor:
     return make_result(out, (ta,), backward, "sqrt", graph=graph)
 
 
+@profiled("tanh")
 def tanh(a: TensorLike) -> Tensor:
     """Elementwise hyperbolic tangent."""
     ta = as_tensor(a)
@@ -226,6 +237,7 @@ def sigmoid_array(x: Array) -> Array:
     return np.where(x >= 0, 1 / (1 + z), z / (1 + z))
 
 
+@profiled("sigmoid")
 def sigmoid(a: TensorLike) -> Tensor:
     """Elementwise logistic sigmoid, evaluated without overflow for large ``|a|``."""
     ta = as_tensor(a)
@@ -240,6 +252,7 @@ def sigmoid(a: TensorLike) -> Tensor:
     return make_result(out, (ta,), backward, "sigmoid", graph=graph)
 
 
+@profiled("relu")
 def relu(a: TensorLike) -> Tensor:
     """Elementwise ``max(a, 0)`` (gradient 0 at exactly 0)."""
     ta = as_tensor(a)
@@ -259,6 +272,7 @@ _GELU_C = math.sqrt(2.0 / math.pi)
 _GELU_A = 0.044715
 
 
+@profiled("gelu")
 def gelu(a: TensorLike) -> Tensor:
     """GELU with the tanh approximation used by GPT-2.
 
@@ -306,6 +320,7 @@ def gelu(a: TensorLike) -> Tensor:
     return make_result(out, (ta,), backward, "gelu", graph=graph)
 
 
+@profiled("astype")
 def astype(a: TensorLike, dtype: DTypeLike) -> Tensor:
     """Dtype conversion; the gradient is cast back to the input dtype.
 
