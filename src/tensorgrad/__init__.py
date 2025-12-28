@@ -5,10 +5,11 @@ and every differentiable op. :mod:`tensorgrad.autograd` exposes the engine (``gr
 ``backward``), :mod:`tensorgrad.func` the function transforms (``grad``, ``vjp``, ``jvp``,
 ``jacobian``, ``hessian``, ``hvp``); neural-network layers live in :mod:`tensorgrad.nn`,
 optimisers in :mod:`tensorgrad.optim` and gradient checking / data loading / checkpoints in
-:mod:`tensorgrad.utils`, and :mod:`tensorgrad.profiler` times every op.
+:mod:`tensorgrad.utils`. :mod:`tensorgrad.profiler` times ops and :mod:`tensorgrad.viz`
+draws graphs.
 """
 
-from tensorgrad import autograd, func, profiler
+from tensorgrad import autograd, func, profiler, viz
 from tensorgrad._random import get_rng, manual_seed
 from tensorgrad.autograd import enable_grad, is_grad_enabled, no_grad
 from tensorgrad.ops import (
@@ -133,6 +134,7 @@ __all__ = [
     "transpose",
     "unsqueeze",
     "var",
+    "viz",
     "where",
     "zeros",
     "zeros_like",
