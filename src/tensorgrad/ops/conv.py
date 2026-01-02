@@ -16,6 +16,8 @@ three ops, and derivatives of any order stay fast im2col matrix products.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
@@ -248,6 +250,41 @@ def conv2d_weight_grad(
     return make_result(out, (tx, tg_), backward, "conv2d_weight_grad", graph=graph)
 
 
+def _window_offsets(
+    kernel: Pair, stride: Pair, out_hw: Pair
+) -> list[tuple[int, tuple[slice, ...]]]:
+    """``(k, index)`` for each kernel offset ``k``: ``xp[index]`` is the ``(N, C, OH, OW)``
+    array of the ``k``-th cell (row-major within the window) of every pooling window."""
+    (kh, kw), (sh, sw), (oh, ow) = kernel, stride, out_hw
+    return [
+        (i * kw + j, (slice(None), slice(None), slice(i, i + sh * (oh - 1) + 1, sh),
+                      slice(j, j + sw * (ow - 1) + 1, sw)))
+        for i in range(kh)
+        for j in range(kw)
+    ]  # fmt: skip
+
+
+def _first_hits(
+    xp: Array, out: Array, offsets: list[tuple[int, tuple[slice, ...]]]
+) -> Iterator[tuple[int, tuple[slice, ...], Array]]:
+    """For each kernel offset, the mask of windows whose maximum is that offset's cell.
+
+    Each window counts only its first maximum in row-major order (the cell
+    ``numpy.argmax`` picks, where a NaN counts as the maximum), as PyTorch does.
+    """
+    open_ = np.ones(out.shape, dtype=np.bool_)
+    nan_out = np.isnan(out)
+    any_nan = bool(nan_out.any())
+    for k, index in offsets:
+        v = xp[index]
+        hit = v == out
+        if any_nan:
+            hit |= np.isnan(v) & nan_out
+        hit &= open_
+        open_ ^= hit
+        yield k, index, hit
+
+
 def _winner_positions(winner: Array, kw: int, stride: Pair, padded: tuple[int, ...]) -> Array:
     """Flat index into the padded input of every window's maximum."""
     n, c, oh, ow = winner.shape
@@ -284,27 +321,35 @@ def max_pool2d(
             f"padding {(ph, pw)} must be at most half the kernel size {(kh, kw)}; larger "
             "padding creates windows that contain only padding"
         )
-    n, c, h, w = tx.shape
+    h, w = tx.shape[2:]
     oh, ow = _out_size(h, kh, sh, ph), _out_size(w, kw, sw, pw)
     xp = tx.data
     if ph or pw:
         xp = np.pad(xp, ((0, 0), (0, 0), (ph, ph), (pw, pw)), constant_values=-np.inf)
-    windows = sliding_window_view(xp, (kh, kw), axis=(2, 3))[:, :, ::sh, ::sw]
-    flat = windows.reshape(n, c, oh, ow, kh * kw)
-    winner = np.argmax(flat, axis=-1)
-    out = np.take_along_axis(flat, winner[..., None], axis=-1)[..., 0]
+    # A running maximum over the kh * kw strided views of the input: one vectorised pass
+    # per kernel offset (np.maximum propagates NaN, like argmax). Which cell won is only
+    # needed by the backward pass, which recovers it by comparison.
+    offsets = _window_offsets((kh, kw), (sh, sw), (oh, ow))
+    out = xp[offsets[0][1]].copy()
+    for _, index in offsets[1:]:
+        np.maximum(out, xp[index], out=out)
 
     def backward(g: Array, need: Need) -> tuple[Array]:
         dxp = np.zeros(xp.shape, dtype=g.dtype)
-        for i in range(kh):
-            for j in range(kw):
-                hit = winner == i * kw + j
-                dxp[:, :, i : i + sh * oh : sh, j : j + sw * ow : sw] += g * hit
+        overlapping = sh < kh or sw < kw
+        for _, index, hit in _first_hits(xp, out, offsets):
+            if overlapping:
+                dxp[index] += g * hit
+            else:  # every input cell is in at most one window: write in place
+                np.multiply(g, hit, out=dxp[index])
         return (dxp[:, :, ph : ph + h, pw : pw + w],)
 
     def graph(g: Tensor, y: Tensor, need: Need) -> tuple[Tensor]:
         # Pooling selects fixed positions (a.e.), so its VJP is a scatter-add of g into
         # them -- a linear op whose own VJP is the matching gather.
+        winner = np.zeros(out.shape, dtype=np.intp)
+        for k, _, hit in _first_hits(xp, out, offsets):
+            winner += k * hit
         positions = _winner_positions(winner, kw, (sh, sw), xp.shape)
         dxp = _scatter_add(reshape(g, (-1,)), (positions.reshape(-1),), True, (xp.size,))
         return (reshape(dxp, xp.shape)[:, :, ph : ph + h, pw : pw + w],)

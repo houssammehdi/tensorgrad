@@ -53,6 +53,45 @@ def test_max_pool2d_matches_naive_loops(rng: np.random.Generator, k: int, stride
     np.testing.assert_allclose(out.data, naive_max_pool(x, k, stride))
 
 
+def argmax_pool_reference(
+    x: np.ndarray, g: np.ndarray, k: int, stride: int, pad: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Output and input gradient of max pooling where each window's gradient goes to the
+    cell numpy.argmax picks (the first maximum, or the first NaN)."""
+    xp = np.pad(x, ((0, 0), (0, 0), (pad, pad), (pad, pad)), constant_values=-np.inf)
+    n, c, hp, wp = xp.shape
+    oh, ow = (hp - k) // stride + 1, (wp - k) // stride + 1
+    out = np.empty((n, c, oh, ow))
+    dxp = np.zeros_like(xp)
+    for b, ch, i, j in np.ndindex(n, c, oh, ow):
+        window = xp[b, ch, i * stride : i * stride + k, j * stride : j * stride + k]
+        r, q = divmod(int(np.argmax(window)), k)
+        out[b, ch, i, j] = window[r, q]
+        dxp[b, ch, i * stride + r, j * stride + q] += g[b, ch, i, j]
+    return out, dxp[:, :, pad : pad + x.shape[2], pad : pad + x.shape[3]]
+
+
+@pytest.mark.parametrize(("k", "stride", "pad"), [(2, 2, 0), (3, 1, 1), (3, 2, 1), (2, 1, 0)])
+def test_max_pool2d_ties_and_nans_follow_argmax(k: int, stride: int, pad: int) -> None:
+    # Values on a coarse grid make ties common; the gradient must go to the first maximum
+    # of each window, and a NaN must win its window (as numpy.argmax and PyTorch do).
+    rng = np.random.default_rng(k * 10 + stride)
+    x = np.round(rng.standard_normal((2, 3, 7, 6)))
+    x.reshape(-1)[::13] = np.nan
+    t = tg.Tensor(x, requires_grad=True)
+    out = tg.max_pool2d(t, k, stride, pad)
+    g = rng.standard_normal(out.shape)
+    out.backward(g)
+    expected_out, expected_grad = argmax_pool_reference(x, g, k, stride, pad)
+    np.testing.assert_array_equal(out.data, expected_out)
+    assert t.grad is not None
+    np.testing.assert_allclose(t.grad.data, expected_grad)
+    (graph_grad,) = tg.autograd.grad(
+        tg.max_pool2d(t, k, stride, pad), [t], grad_outputs=tg.Tensor(g), create_graph=True
+    )
+    np.testing.assert_allclose(graph_grad.data, expected_grad)
+
+
 def test_max_pool2d_padding_never_wins() -> None:
     x = -np.ones((1, 1, 2, 2))
     out = tg.max_pool2d(tg.Tensor(x), 2, stride=1, padding=1)
