@@ -31,19 +31,45 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--test-size", type=int, default=1000)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=3e-3)
+    parser.add_argument("--arch", choices=["plain", "bn", "residual"], default="bn")
     parser.add_argument("--plot", type=Path, default=DEFAULT_PLOT, help="output PNG path")
     parser.add_argument("--no-plot", action="store_true", help="skip the prediction grid")
     return parser.parse_args()
 
 
-def build_model() -> nn.Module:
+class ResidualBlock(nn.Module):
+    """``relu(x + bn(conv(relu(bn(conv(x))))))`` with 3x3 convolutions that keep the shape."""
+
+    def __init__(self, channels: int) -> None:
+        super().__init__()
+        self.conv1 = nn.Conv2d(channels, channels, 3, padding=1)
+        self.bn1 = nn.BatchNorm2d(channels)
+        self.conv2 = nn.Conv2d(channels, channels, 3, padding=1)
+        self.bn2 = nn.BatchNorm2d(channels)
+
+    def forward(self, x: tg.Tensor) -> tg.Tensor:
+        return tg.relu(x + self.bn2(self.conv2(tg.relu(self.bn1(self.conv1(x))))))
+
+
+def build_model(arch: str = "bn") -> nn.Module:
+    """``plain``: the v0.1.0 network; ``bn``: batch norm after each convolution (default);
+    ``residual``: ``bn`` plus a residual block at each resolution.
+
+    On seeds 0-2 ``bn`` reaches 94-98% test accuracy after one epoch and 100% after six,
+    against 81-87% and 99.2-99.8% for ``plain``; ``residual`` also ends at 100% but each
+    epoch takes about 5x as long as with ``bn`` (see the README).
+    """
+    layers: list[nn.Module] = []
+    for c_in, c_out in ((1, 16), (16, 32)):  # 16x16 -> 8x8 -> 4x4
+        layers.append(nn.Conv2d(c_in, c_out, 3, padding=1))
+        if arch != "plain":
+            layers.append(nn.BatchNorm2d(c_out))
+        layers.append(nn.ReLU())
+        if arch == "residual":
+            layers.append(ResidualBlock(c_out))
+        layers.append(nn.MaxPool2d(2))
     return nn.Sequential(
-        nn.Conv2d(1, 16, 3, padding=1),  # 16x16
-        nn.ReLU(),
-        nn.MaxPool2d(2),  # 8x8
-        nn.Conv2d(16, 32, 3, padding=1),
-        nn.ReLU(),
-        nn.MaxPool2d(2),  # 4x4
+        *layers,
         nn.Flatten(),
         nn.Linear(32 * 4 * 4, 64),
         nn.ReLU(),
@@ -104,7 +130,7 @@ def main() -> None:
     tg.manual_seed(args.seed)
     x_train, y_train = make_shapes(args.train_size, seed=args.seed)
     x_test, y_test = make_shapes(args.test_size, seed=args.seed + 10_000)
-    model = build_model()
+    model = build_model(args.arch)
     opt = optim.Adam(model.parameters(), lr=args.lr)
     loader = DataLoader(x_train, y_train, batch_size=args.batch_size, shuffle=True, seed=args.seed)
     sched = optim.CosineWarmupLR(
