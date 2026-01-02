@@ -97,9 +97,18 @@ def test_adding_problem_example_runs_every_cell() -> None:
         assert any(line.startswith(f"{name} ") and "test MSE" in line for line in out.splitlines())
 
 
+def test_ddpm_example_samples_and_scores() -> None:
+    out = run_example(
+        "ddpm_2d.py", "--steps", "30", "--diffusion-steps", "40", "--samples", "200",
+        "--hidden", "16", "--no-plot",
+    )  # fmt: skip
+    assert "energy distance to fresh data" in out
+    assert "distance to the noiseless spiral" in out
+
+
 @pytest.mark.parametrize(
     "script",
-    ["spiral_mlp.py", "shapes_cnn.py", "char_gpt.py", "adding_problem.py"],
+    ["spiral_mlp.py", "shapes_cnn.py", "char_gpt.py", "adding_problem.py", "ddpm_2d.py"],
 )
 def test_examples_expose_epochs_or_steps_and_seed(script: str) -> None:
     help_text = run_example(script, "--help")
