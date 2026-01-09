@@ -10,12 +10,13 @@ import numpy as np
 from tensorgrad import ops
 from tensorgrad._random import get_rng
 from tensorgrad._types import Array
-from tensorgrad.autograd import no_grad
+from tensorgrad.autograd import is_grad_enabled, no_grad
 from tensorgrad.nn import init
 from tensorgrad.nn.attention import LayerCache, MultiHeadAttention
 from tensorgrad.nn.layers import GELU, Dropout, Embedding, LayerNorm, Linear, Sequential
 from tensorgrad.nn.module import Module
 from tensorgrad.tensor import Tensor
+from tensorgrad.utils.grad_checkpoint import checkpoint
 
 __all__ = ["GPT", "GPTConfig", "KVCache", "TransformerBlock"]
 
@@ -84,7 +85,14 @@ class GPT(Module):
     final LayerNorm and a linear head producing next-token logits. With ``tie_weights`` the
     head reuses the token-embedding matrix (one :class:`~tensorgrad.nn.Parameter` used in two
     places; the autograd engine sums both gradient contributions).
+
+    Set :attr:`gradient_checkpointing` to recompute each block's activations in the backward
+    pass instead of storing them (see :func:`tensorgrad.utils.checkpoint`).
     """
+
+    #: Checkpoint every block when gradients are recorded: less memory, about one extra
+    #: forward pass of compute.
+    gradient_checkpointing: bool
 
     def __init__(self, config: GPTConfig) -> None:
         super().__init__()
@@ -103,6 +111,7 @@ class GPT(Module):
         self._init_weights()
         if config.tie_weights:
             self.head.weight = self.tok_emb.weight
+        self.gradient_checkpointing = False
 
     def _init_weights(self) -> None:
         # GPT-2 initialisation: N(0, 0.02) everywhere, residual output projections scaled by
@@ -144,8 +153,10 @@ class GPT(Module):
                 f"sequence length {start + t} exceeds block_size {self.config.block_size}"
             )
         if cache is None:
-            x = self.tok_emb(tokens) + self.pos_emb(np.arange(t))
-            x = self.blocks(self.drop(x))
+            x = self.drop(self.tok_emb(tokens) + self.pos_emb(np.arange(t)))
+            recompute = self.gradient_checkpointing and is_grad_enabled()
+            for block in self.blocks:
+                x = checkpoint(block, x) if recompute else block(x)
             return self.head(self.ln_f(x))
         if self.training:
             raise ValueError("a KV cache is for inference: call eval() first")

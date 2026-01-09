@@ -7,7 +7,9 @@ factories) draws from a single :class:`numpy.random.Generator`, so one call to
 
 from __future__ import annotations
 
+import contextlib
 import math
+from collections.abc import Iterator
 
 import numpy as np
 
@@ -28,6 +30,20 @@ def manual_seed(seed: int) -> None:
 def get_rng() -> np.random.Generator:
     """Return the global generator."""
     return _RngState.generator
+
+
+@contextlib.contextmanager
+def replaying(generator: np.random.Generator) -> Iterator[None]:
+    """Make ``generator`` the global generator inside the block, then restore the previous one.
+
+    Gradient checkpointing uses it to repeat the forward pass's random draws.
+    """
+    previous = _RngState.generator
+    _RngState.generator = generator
+    try:
+        yield
+    finally:
+        _RngState.generator = previous
 
 
 #: Bit generators whose raw output words carry 64 uniform bits.
