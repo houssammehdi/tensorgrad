@@ -47,9 +47,11 @@ jobs:
   parity:
     # Optional reference check: compares every op and module with PyTorch. It is the only
     # job that downloads torch (the CPU build, from PyTorch's own package index); the test
-    # jobs above never import it.
-    name: PyTorch parity (CPU torch)
+    # jobs above never import it. A failure here (or an outage of that index) is reported
+    # on the job but does not fail the workflow.
+    name: PyTorch parity (optional, CPU torch)
     runs-on: ubuntu-latest
+    continue-on-error: true
     env:
       OPENBLAS_NUM_THREADS: "1"
       OMP_NUM_THREADS: "1"
