@@ -10,8 +10,8 @@ pip install -e ".[dev]"
 OMP_NUM_THREADS=1 pytest tests/parity -m torch
 ```
 
-With torch 2.14.0 all 111 parity tests pass (about 5 seconds), with tolerances of
-`rtol=1e-10`, `atol=1e-12`.
+With torch 2.14.0 all 131 parity tests pass (in about 20 seconds on a busy 4-vCPU VM),
+with tolerances of `rtol=1e-10`, `atol=1e-12`.
 
 ## What is compared
 
@@ -35,12 +35,15 @@ indexing, `concat`, `stack`, `where`, `masked_fill`), the softmax family, the fo
 and running statistics) and scaled-dot-product attention (causal and with explicit masks).
 
 **nn modules** (`test_parity_nn.py`), with weights copied into the PyTorch equivalent
-(`Linear`, `Conv2d`, `Embedding`, `LayerNorm`, `BatchNorm1d`, `nn.MultiheadAttention`, a
-`Sequential` MLP) or into a reference written directly in PyTorch (the pre-LN transformer
-block and the GPT with tied embeddings): outputs, the input gradient, every parameter
-gradient, and a Hessian-vector product with respect to all parameters. PyTorch's fused CPU
-attention kernel has no double backward, so these tests select its "math" attention
-backend.
+(`Linear`, `Conv2d`, `Embedding`, `LayerNorm`, `BatchNorm1d`, `BatchNorm2d`,
+`nn.MultiheadAttention`, a `Sequential` MLP, and `RNN` (tanh and ReLU), `LSTM` and `GRU`
+with two layers, with and without biases, batch-first and time-major) or into a reference
+written directly in PyTorch (the pre-LN transformer block and the GPT with tied
+embeddings): outputs, the input gradient, every parameter gradient, and a Hessian-vector
+product with respect to all parameters. For the recurrent layers the final states are
+compared too, and so are the gradients with respect to given initial states. PyTorch's
+fused CPU attention kernel has no double backward, so these tests select its "math"
+attention backend.
 
 **Optimisers** (`test_parity_optim.py`): SGD (momentum, Nesterov, weight decay), Adam with
 L2 decay, AdamW, `clip_grad_norm_` and `StepLR` follow the same trajectories as
