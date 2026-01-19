@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tensorgrad"
-version = "0.1.0"
-description = "A from-scratch deep-learning framework: reverse-mode autodiff over NumPy tensors, a PyTorch-like nn/optim API, and a character-level GPT."
+version = "0.2.0"
+description = "A from-scratch deep-learning framework on NumPy: reverse-mode autodiff to any order, function transforms, and a PyTorch-like nn/optim API checked against PyTorch."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Houssam Mehdi" }]
-keywords = ["autograd", "automatic-differentiation", "deep-learning", "numpy", "transformer", "gpt"]
+keywords = ["autograd", "automatic-differentiation", "higher-order-derivatives", "deep-learning", "numpy", "transformer", "gpt", "lstm"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
