@@ -207,7 +207,7 @@ shows that composition works as well; their derivatives of every order come from
   the recomputed graph stays connected and higher-order derivatives work. A tensor that
   requires grad but was not declared raises an error, because its gradient would otherwise
   be lost. `GPT.gradient_checkpointing = True` checkpoints every block: on the round-1 GPT
-  step the peak traced memory halves for a third more time (see
+  step the peak traced memory halves for about 35% more time per step (see
   [performance.md](performance.md#gradient-checkpointing)).
 - **KV cache.** `GPT.make_cache(batch)` preallocates `(B, heads, block_size, head_dim)` key
   and value buffers per layer. With the cache, `forward` processes only the new tokens:

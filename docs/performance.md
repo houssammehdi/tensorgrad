@@ -6,7 +6,8 @@ of BLAS threading and of the glibc allocator, and generation with the KV cache.
 
 **Machine and method.** All numbers come from a shared 4-vCPU Linux VM (Python 3.11.15,
 NumPy 2.4.6 with OpenBLAS, PyTorch 2.14.0) on which other jobs were running: the 1-minute
-load average during these measurements was between 4 and 9, so treat them as indicative.
+load average during these measurements was between 3.5 and 10, so treat them as
+indicative.
 To keep comparisons fair under a changing load, the variants being compared are
 interleaved (A, B, A, B, ...) and the tables report medians. Every command is given; the
 benchmark scripts print the load average with their results.
@@ -32,16 +33,15 @@ column adds `--retain-freed-memory` (see [the allocator](#the-allocator)):
 
 | Workload | 0.1.0 | 0.2.0 | 0.2.0 with `--retain-freed-memory` |
 |---|---|---|---|
-| spiral | 1.68 ms (best 1.54) | 1.41 ms (best 1.28): 1.2x | 1.08 ms (best 1.01): 1.6x |
-| cnn | 37.6 ms (best 24.3) | 31.6 ms (best 18.1): 1.2x | 24.4 ms (best 15.1): 1.5x |
-| gpt | 373 ms (best 282) | 228 ms (best 170): 1.6x | 227 ms (best 146): 1.6x |
+| spiral | 1.62 ms (best 1.31) | 1.38 ms (best 1.26): 1.2x | 1.06 ms (best 1.00): 1.5x |
+| cnn | 23.4 ms (best 21.4) | 19.9 ms (best 17.8): 1.2x | 15.8 ms (best 14.5): 1.5x |
+| gpt | 255 ms (best 223) | 177 ms (best 147): 1.4x | 149 ms (best 140): 1.7x |
 
 Each cell is the median over the five runs of each run's median step time, with the fastest
 single step in brackets; the factors compare medians with 0.1.0. The load average was
-between 6.8 and 10.4 during this comparison, and at that load the medians move by up to 20%
-between runs while the fastest steps are more stable. An earlier run of the same comparison
-(before the pooling change below, load 7.3 to 8.2) gave GPT medians of 307, 204 and 161 ms,
-and fastest steps of 256, 175 and 142 ms, for the three columns.
+between 3.5 and 5.3 during this comparison. A run of the same code at a load of 6.8 to 10.4
+gave factors of 1.2, 1.2 and 1.6 (without the allocator tuning) and 1.6, 1.5 and 1.6 (with
+it): at high load the medians move by up to 20% between runs.
 
 The GPT step is faster because of the transformer work of this release (each change was
 measured on its own when it was made, by interleaved runs of this benchmark):
@@ -112,14 +112,15 @@ runs both frameworks in one process with one thread each (`OPENBLAS_NUM_THREADS=
 
 | Workload | tensorgrad | PyTorch | tensorgrad / PyTorch |
 |---|---|---|---|
-| spiral | 1.09 ms | 1.49 ms | 0.73 |
-| cnn | 16.5 ms | 8.1 ms | 2.0 |
-| gpt | 152 ms | 149 ms | 1.02 |
+| spiral | 1.10 ms | 1.44 ms | 0.76 |
+| cnn | 17.1 ms | 8.6 ms | 2.0 |
+| gpt | 163 ms | 155 ms | 1.05 |
 
-These are medians over all timed steps with `--retain-freed-memory` (load average 8.2 at the
-end). Without it (load average up to 10.9) the ratios were 0.73, 2.3 and 1.07, and an earlier
-pair of runs, before the pooling change, gave 0.72 to 0.74, 2.4 to 2.6 and 1.04 to 1.05. PyTorch
-2.14.0 here uses MKL for matrix products and oneDNN for convolutions, with AVX-512.
+These are medians over all timed steps with `--retain-freed-memory` (load average 5.9 at the
+end). Without it (load average 6.3) the ratios were 0.73, 2.4 and 1.05. Two earlier pairs of
+runs, at load averages of 7 to 11, gave 0.72 to 0.74 for the MLP, 2.0 to 2.6 for the CNN and
+1.02 to 1.07 for the GPT. PyTorch 2.14.0 here uses MKL for matrix products and oneDNN for
+convolutions, with AVX-512.
 
 - **The tiny MLP is faster in tensorgrad.** Its matrices are 600x64, so a step is dominated
   by per-op overhead, and a NumPy call plus tensorgrad's bookkeeping is cheaper than
@@ -140,13 +141,15 @@ pair of runs, before the pooling change, gave 0.72 to 0.74, 2.4 to 2.6 and 1.04 
 Round 1 found that OpenBLAS's default thread pool made small workloads much slower and
 recommended `OPENBLAS_NUM_THREADS=1`. Re-checked for this release by running
 `benchmarks/train_step.py --retain-freed-memory` with `OPENBLAS_NUM_THREADS=1` and `=4`,
-two rounds each, at a load average of 6.2 to 6.5:
+two rounds each, at a load average of 5.4 to 7.5:
 
 | Workload | 1 thread | 4 threads | Slowdown |
 |---|---|---|---|
-| spiral | 1.08, 1.05 ms | 80.0, 44.3 ms | 41x to 74x |
-| cnn | 17.0, 16.5 ms | 176, 164 ms | about 10x |
-| gpt | 155, 160 ms | 638, 669 ms | about 4x |
+| spiral | 1.07, 1.09 ms | 64.0, 40.1 ms | 37x to 60x |
+| cnn | 16.3, 16.9 ms | 341, 237 ms | 14x to 21x |
+| gpt | 148, 159 ms | 1090, 896 ms | 6x to 7x |
+
+An earlier run at a load of 6.2 to 6.5 gave slowdowns of 41x to 74x, about 10x and about 4x.
 
 On an idle machine, earlier in this release's development, four threads were within about
 10% of one thread for these workloads: the matrices are too small to split profitably. On a
@@ -176,15 +179,16 @@ version table above.
 `GPT.gradient_checkpointing = True` recomputes each block's activations in the backward pass
 (`tensorgrad.utils.checkpoint`). On the round-1 GPT step, `OPENBLAS_NUM_THREADS=1 python
 benchmarks/train_step.py --workloads gpt gpt-checkpointed --retain-freed-memory
---peak-memory` (load average 4.5):
+--peak-memory` (load average 5.9; a run at 4.5 gave 157 and 207 ms and the same memory):
 
 | | Median step | Peak memory traced by `tracemalloc` |
 |---|---|---|
-| without checkpointing | 157 ms | 84.1 MB |
-| every block checkpointed | 207 ms | 40.1 MB |
+| without checkpointing | 152 ms | 84.1 MB |
+| every block checkpointed | 210 ms | 40.1 MB |
 
 Between the two passes only each block's input is kept, so the peak roughly halves; the
-price is one more forward pass through the blocks, about a third of the step.
+price is one more forward pass through the blocks: 32% and 38% more time per step in the two
+runs.
 
 ## Generation with the KV cache
 
@@ -194,12 +198,12 @@ cache. Median of three runs:
 
 | Tokens generated | With the cache | Without | Speed-up |
 |---|---|---|---|
-| 127 (filling the 128-token window) | 521 tokens/s | 145 tokens/s | 3.6x |
-| 384 (past the window) | 127 tokens/s | 105 tokens/s | 1.2x |
+| 127 (filling the 128-token window) | 668 tokens/s | 200 tokens/s | 3.3x |
+| 384 (past the window) | 155 tokens/s | 133 tokens/s | 1.2x |
 
-(The three runs gave 487, 521 and 523 tokens/s with the cache and 139, 177 and 145 without
-for the first row; 136, 124 and 127 against 107, 95 and 105 for the second. Load average
-7.6 to 9.1.)
+(The three runs gave 689, 662 and 668 tokens/s with the cache and 199, 200 and 205 without
+for the first row; 155, 156 and 148 against 137, 133 and 127 for the second. Load average
+about 6. Runs at a load of 7.6 to 9.1 gave 3.5x and 1.2x.)
 
 Within the context window the cache turns every step into a one-position update. Past it,
 the learned position embeddings are absolute, so the shifted window has to be re-encoded

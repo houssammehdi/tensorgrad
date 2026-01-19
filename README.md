@@ -189,13 +189,14 @@ The second-order examples have their own figures:
 
 ## Performance
 
-Training steps are 1.2 to 1.6 times faster than in version 0.1.0, and 1.5 to 1.6 times
-with the allocator tuning that the examples apply (`utils.retain_freed_memory`). Against
-PyTorch 2.14 on the same CPU with one thread each, the small MLP step takes 0.73 times
-PyTorch's time (per-op overhead dominates, and NumPy's is lower), the GPT step 1.02 times
-(both spend it in the same kind of matrix products) and the CNN step 2.0 times (PyTorch has
-oneDNN's convolution kernels). Gradient checkpointing halves the GPT step's peak memory for
-a third more time. The method, per-op profiles and the threading and allocator findings are
+Training steps are 1.2 to 1.6 times as fast as in version 0.1.0 on the benchmark
+workloads, and 1.5 to 1.7 times with the allocator tuning that the examples apply
+(`utils.retain_freed_memory`). Against PyTorch 2.14 on the same CPU with one thread each, the
+small MLP step takes about 0.75 times PyTorch's time (per-op overhead dominates, and
+NumPy's is lower), the GPT step about 1.05 times (both spend it in similar matrix products)
+and the CNN step 2 to 2.5 times (PyTorch has oneDNN's convolution kernels). Gradient
+checkpointing halves the GPT step's peak memory for about 35% more time. The method,
+per-op profiles and the threading and allocator findings are
 in [docs/performance.md](docs/performance.md).
 
 ## Documentation
