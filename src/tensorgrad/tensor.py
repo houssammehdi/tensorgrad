@@ -417,11 +417,16 @@ class Tensor:
 
     def all(self, axis: Axis = None, keepdims: bool = False) -> Tensor:
         """Whether every element along ``axis`` is true (not differentiable)."""
-        return Tensor._wrap(np.all(self.data, axis=axis, keepdims=keepdims))
+        # Literal keepdims: NumPy's stubs have no overload for a plain ``bool``.
+        data = self.data
+        out = np.all(data, axis=axis, keepdims=True) if keepdims else np.all(data, axis=axis)
+        return Tensor._wrap(np.asarray(out))
 
     def any(self, axis: Axis = None, keepdims: bool = False) -> Tensor:
         """Whether any element along ``axis`` is true (not differentiable)."""
-        return Tensor._wrap(np.any(self.data, axis=axis, keepdims=keepdims))
+        data = self.data
+        out = np.any(data, axis=axis, keepdims=True) if keepdims else np.any(data, axis=axis)
+        return Tensor._wrap(np.asarray(out))
 
     def argmax(self, axis: int | None = None, keepdims: bool = False) -> Tensor:
         """Indices of the maxima (not differentiable)."""
